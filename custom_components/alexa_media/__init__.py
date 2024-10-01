@@ -49,7 +49,10 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.discovery import async_load_platform
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 from homeassistant.util import dt, slugify
 import voluptuous as vol
 
@@ -108,6 +111,7 @@ ACCOUNT_CONFIG_SCHEMA = vol.Schema(
         vol.Optional(CONF_QUEUE_DELAY, default=DEFAULT_QUEUE_DELAY): cv.positive_float,
         vol.Optional(CONF_EXTENDED_ENTITY_DISCOVERY, default=False): cv.boolean,
         vol.Optional(CONF_DEBUG, default=False): cv.boolean,
+        vol.Optional(CONF_OTPSECRET, default=""): cv.string,  # Ensure OTP secret is included
     }
 )
 
@@ -150,17 +154,14 @@ async def async_setup(hass, config, discovery_info=None):
                     and entry.data.get(CONF_URL) == account[CONF_URL]
                 ):
                     _LOGGER.debug("Updating existing entry")
+                    # Update 'data' and 'options' separately
                     hass.config_entries.async_update_entry(
                         entry,
                         data={
                             CONF_EMAIL: account[CONF_EMAIL],
                             CONF_PASSWORD: account[CONF_PASSWORD],
                             CONF_URL: account[CONF_URL],
-                            CONF_INCLUDE_DEVICES: account[CONF_INCLUDE_DEVICES],
-                            CONF_EXCLUDE_DEVICES: account[CONF_EXCLUDE_DEVICES],
-                            CONF_SCAN_INTERVAL: account[
-                                CONF_SCAN_INTERVAL
-                            ].total_seconds(),
+                            CONF_SCAN_INTERVAL: account[CONF_SCAN_INTERVAL].total_seconds(),
                             CONF_QUEUE_DELAY: account[CONF_QUEUE_DELAY],
                             CONF_OAUTH: account.get(
                                 CONF_OAUTH, entry.data.get(CONF_OAUTH, {})
@@ -172,6 +173,11 @@ async def async_setup(hass, config, discovery_info=None):
                                 CONF_EXTENDED_ENTITY_DISCOVERY
                             ],
                             CONF_DEBUG: account[CONF_DEBUG],
+                        },
+                        options={
+                            CONF_INCLUDE_DEVICES: account.get(CONF_INCLUDE_DEVICES, []),
+                            CONF_EXCLUDE_DEVICES: account.get(CONF_EXCLUDE_DEVICES, []),
+                            CONF_PUBLIC_URL: account.get(CONF_PUBLIC_URL, DEFAULT_PUBLIC_URL),
                         },
                     )
                     entry_found = True
@@ -186,16 +192,11 @@ async def async_setup(hass, config, discovery_info=None):
                         CONF_URL: account[CONF_URL],
                         CONF_EMAIL: account[CONF_EMAIL],
                         CONF_PASSWORD: account[CONF_PASSWORD],
-                        CONF_PUBLIC_URL: account[CONF_PUBLIC_URL],
-                        CONF_INCLUDE_DEVICES: account[CONF_INCLUDE_DEVICES],
-                        CONF_EXCLUDE_DEVICES: account[CONF_EXCLUDE_DEVICES],
                         CONF_SCAN_INTERVAL: account[CONF_SCAN_INTERVAL].total_seconds(),
                         CONF_QUEUE_DELAY: account[CONF_QUEUE_DELAY],
                         CONF_OAUTH: account.get(CONF_OAUTH, {}),
                         CONF_OTPSECRET: account.get(CONF_OTPSECRET, ""),
-                        CONF_EXTENDED_ENTITY_DISCOVERY: account[
-                            CONF_EXTENDED_ENTITY_DISCOVERY
-                        ],
+                        CONF_EXTENDED_ENTITY_DISCOVERY: account[CONF_EXTENDED_ENTITY_DISCOVERY],
                         CONF_DEBUG: account[CONF_DEBUG],
                     },
                 )
@@ -203,7 +204,6 @@ async def async_setup(hass, config, discovery_info=None):
     return True
 
 
-# @retry_async(limit=5, delay=5, catch_exceptions=True)
 async def async_setup_entry(hass, config_entry):
     # noqa: MC0001
     """Set up Alexa Media Player as config entry."""
@@ -227,9 +227,12 @@ async def async_setup_entry(hass, config_entry):
 
     async def relogin(event=None) -> None:
         """Relogin to Alexa."""
-        if hide_email(email) == event.data.get("email"):
-            _LOGGER.debug("%s: Received relogin request: %s", hide_email(email), event)
-            login_obj: AlexaLogin = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
+        event_email = event.data.get("email")
+        if hide_email(email) == event_email:
+            _LOGGER.debug(
+                "%s: Received relogin request: %s", hide_email(email), event
+            )
+            login_obj: Optional[AlexaLogin] = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
                 "login_obj"
             )
             uuid = (await calculate_uuid(hass, email, url))["uuid"]
@@ -252,15 +255,28 @@ async def async_setup_entry(hass, config_entry):
             # await login_obj.login()
             if await test_login_status(hass, config_entry, login_obj):
                 await setup_alexa(hass, config_entry, login_obj)
+        else:
+            _LOGGER.debug(
+                "Email mismatch: stored=%s, event=%s",
+                hide_email(email),
+                event_email,
+            )
 
     async def login_success(event=None) -> None:
         """Relogin to Alexa."""
-        if hide_email(email) == event.data.get("email"):
+        event_email = event.data.get("email")
+        if hide_email(email) == event_email:
             _LOGGER.debug("Received Login success: %s", event)
-            login_obj: AlexaLogin = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
+            login_obj: Optional[AlexaLogin] = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get(
                 "login_obj"
             )
             await setup_alexa(hass, config_entry, login_obj)
+        else:
+            _LOGGER.debug(
+                "Email mismatch: stored=%s, event=%s",
+                hide_email(email),
+                event_email,
+            )
 
     if not hass.data.get(DATA_ALEXAMEDIA):
         _LOGGER.debug(STARTUP)
@@ -312,21 +328,13 @@ async def async_setup_entry(hass, config_entry):
             "second_account_index": 0,
             "should_get_network": True,
             "options": {
-                CONF_INCLUDE_DEVICES: config_entry.data.get(CONF_INCLUDE_DEVICES, ""),
-                CONF_EXCLUDE_DEVICES: config_entry.data.get(CONF_EXCLUDE_DEVICES, ""),
-                CONF_QUEUE_DELAY: config_entry.data.get(
-                    CONF_QUEUE_DELAY, DEFAULT_QUEUE_DELAY
-                ),
-                CONF_SCAN_INTERVAL: config_entry.data.get(
-                    CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-                ),
-                CONF_PUBLIC_URL: config_entry.data.get(
-                    CONF_PUBLIC_URL, DEFAULT_PUBLIC_URL
-                ),
-                CONF_EXTENDED_ENTITY_DISCOVERY: config_entry.data.get(
-                    CONF_EXTENDED_ENTITY_DISCOVERY, DEFAULT_EXTENDED_ENTITY_DISCOVERY
-                ),
-                CONF_DEBUG: config_entry.data.get(CONF_DEBUG, False),
+                CONF_INCLUDE_DEVICES: config_entry.options.get(CONF_INCLUDE_DEVICES, config_entry.data.get(CONF_INCLUDE_DEVICES, [])),
+                CONF_EXCLUDE_DEVICES: config_entry.options.get(CONF_EXCLUDE_DEVICES, config_entry.data.get(CONF_EXCLUDE_DEVICES, [])),
+                CONF_QUEUE_DELAY: config_entry.options.get(CONF_QUEUE_DELAY, config_entry.data.get(CONF_QUEUE_DELAY, DEFAULT_QUEUE_DELAY)),
+                CONF_SCAN_INTERVAL: config_entry.options.get(CONF_SCAN_INTERVAL, config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
+                CONF_PUBLIC_URL: config_entry.options.get(CONF_PUBLIC_URL, config_entry.data.get(CONF_PUBLIC_URL, DEFAULT_PUBLIC_URL)),
+                CONF_EXTENDED_ENTITY_DISCOVERY: config_entry.options.get(CONF_EXTENDED_ENTITY_DISCOVERY, config_entry.data.get(CONF_EXTENDED_ENTITY_DISCOVERY, DEFAULT_EXTENDED_ENTITY_DISCOVERY)),
+                CONF_DEBUG: config_entry.options.get(CONF_DEBUG, config_entry.data.get(CONF_DEBUG, False)),
             },
             DATA_LISTENER: [config_entry.add_update_listener(update_listener)],
         },
@@ -357,14 +365,32 @@ async def async_setup_entry(hass, config_entry):
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, complete_startup)
     hass.bus.async_listen("alexa_media_relogin_required", relogin)
     hass.bus.async_listen("alexa_media_relogin_success", login_success)
-    try:
-        await login.login(cookies=await login.load_cookie())
-        if await test_login_status(hass, config_entry, login):
-            await setup_alexa(hass, config_entry, login)
-            return True
-        return False
-    except AlexapyConnectionError as err:
-        raise ConfigEntryNotReady(str(err) or "Connection Error during login") from err
+    retries = 5
+    for attempt in range(retries):
+        try:
+            await login.login(cookies=await login.load_cookie())
+            if await test_login_status(hass, config_entry, login):
+                await setup_alexa(hass, config_entry, login)
+                return True
+            return False
+        except AlexapyConnectionError as err:
+            if "partitioned" in str(err):
+                _LOGGER.warning(
+                    "Cookie error: The 'partitioned' attribute is not supported in Python 3.12. "
+                    "To fix this, manually patch the cookies.py file."
+                )
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                continue
+            else:
+                _LOGGER.error(
+                    "Unexpected error during login for %s: %s",
+                    hide_email(login.email),
+                    err,
+                )
+                raise ConfigEntryNotReady(
+                    str(err) or "Connection Error during login"
+                ) from err
 
 
 async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
@@ -398,7 +424,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         if (
             email not in hass.data[DATA_ALEXAMEDIA]["accounts"]
             or not login_obj.status.get("login_successful")
-            or login_obj.session.closed
+            or (login_obj.session and login_obj.session.closed)  # Safe access
             or login_obj.close_requested
         ):
             return
@@ -516,7 +542,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             await process_notifications(login_obj, raw_notifications)
             # Process last_called data to fire events
             await update_last_called(login_obj)
-        except (AlexapyLoginError, JSONDecodeError):
+        except (AlexapyLoginError, JSONDecodeError) as err:
             _LOGGER.debug(
                 "%s: Alexa API disconnected; attempting to relogin : status %s",
                 hide_email(email),
@@ -527,8 +553,18 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     "alexa_media_relogin_required",
                     event_data={"email": hide_email(email), "url": login_obj.url},
                 )
+            _LOGGER.error(
+                "Unexpected error during data update for %s: %s",
+                hide_email(email),
+                err,
+            )
             return
         except BaseException as err:
+            _LOGGER.error(
+                "Unexpected error during data update for %s: %s",
+                hide_email(email),
+                err,
+            )
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 
         new_alexa_clients = []  # list of newly discovered device names
@@ -655,6 +691,11 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                             config_entry, [component]
                         )
                     except (asyncio.TimeoutError, TimeoutException) as ex:
+                        _LOGGER.error(
+                            "Timeout while loading config entry for %s: %s",
+                            component,
+                            ex,
+                        )
                         raise ConfigEntryNotReady(
                             f"Timeout while loading config entry for {component}"
                         ) from ex
@@ -689,7 +730,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             else:
                 device_registry.async_remove_device(device_entry.id)
                 _LOGGER.debug(
-                    "%s: Removing stale device %s", hide_email(email), device_entry.name
+                    "%s: Removing stale device %s",
+                    hide_email(email),
+                    device_entry.name,
                 )
 
         await login_obj.save_cookiefile()
@@ -859,30 +902,36 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         _LOGGER.debug("%s: get_dnd_state failed: dnd:%s", hide_email(email), dnd)
         return
 
-    async def http2_connect() -> HTTP2EchoClient:
+    async def http2_connect() -> Optional[HTTP2EchoClient]:
         """Open HTTP2 Push connection.
 
         This will only attempt one login before failing.
         """
-        http2: Optional[HTTP2EchoClient] = None
         email = login_obj.email
         try:
-            if login_obj.session.closed:
+            if login_obj.session and login_obj.session.closed:
                 _LOGGER.debug(
                     "%s: HTTP2 creation aborted. Session is closed.",
                     hide_email(email),
                 )
                 return
-            http2 = HTTP2EchoClient(
-                login_obj,
-                msg_callback=http2_handler,
-                open_callback=http2_open_handler,
-                close_callback=http2_close_handler,
-                error_callback=http2_error_handler,
-                loop=hass.loop,
+
+            # Offload the creation of HTTP2EchoClient to a separate thread to avoid blocking
+            http2 = await asyncio.to_thread(
+                lambda: HTTP2EchoClient(
+                    login_obj,
+                    msg_callback=http2_handler,
+                    open_callback=http2_open_handler,
+                    close_callback=http2_close_handler,
+                    error_callback=http2_error_handler,
+                    loop=hass.loop,
+                )
             )
             _LOGGER.debug("%s: HTTP2 created: %s", hide_email(email), http2)
+            
+            # Run the async_run coroutine without blocking the event loop
             await http2.async_run()
+
         except AlexapyLoginError as exception_:
             _LOGGER.debug(
                 "%s: Login Error detected from http2: %s",
@@ -1138,9 +1187,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     )
                 ):
                     _LOGGER.debug("Discovered new media_player %s", hide_serial(serial))
-                    (hass.data[DATA_ALEXAMEDIA]["accounts"][email]["new_devices"]) = (
-                        True
-                    )
+                    (hass.data[DATA_ALEXAMEDIA]["accounts"][email]["new_devices"]) = True
                     if coordinator:
                         await coordinator.async_request_refresh()
 
@@ -1174,7 +1221,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             )
             return
         errors: int = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"]
-        delay: int = 5 * 2**errors
+        delay: int = 5 * 2 ** errors
         last_attempt = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
             "http2_lastattempt"
         ]
@@ -1198,7 +1245,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
             errors = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] = (
                 hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] + 1
             )
-            delay = 5 * 2**errors
+            delay = 5 * 2 ** errors
             errors = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"]
             await asyncio.sleep(delay)
         if not http2_enabled:
@@ -1243,18 +1290,10 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
     _LOGGER.debug("Setting up Alexa devices for %s", hide_email(login_obj.email))
     config = config_entry.data
-    email = config.get(CONF_EMAIL)
-    include = (
-        cv.ensure_list_csv(config[CONF_INCLUDE_DEVICES])
-        if config[CONF_INCLUDE_DEVICES]
-        else ""
-    )
+    email: str = config.get(CONF_EMAIL)
+    include: list[str] = cv.ensure_list_csv(config_entry.options.get(CONF_INCLUDE_DEVICES, config_entry.data.get(CONF_INCLUDE_DEVICES, [])))
     _LOGGER.debug("include: %s", include)
-    exclude = (
-        cv.ensure_list_csv(config[CONF_EXCLUDE_DEVICES])
-        if config[CONF_EXCLUDE_DEVICES]
-        else ""
-    )
+    exclude: list[str] = cv.ensure_list_csv(config_entry.options.get(CONF_EXCLUDE_DEVICES, config_entry.data.get(CONF_EXCLUDE_DEVICES, [])))
     _LOGGER.debug("exclude: %s", exclude)
     scan_interval: float = (
         config.get(CONF_SCAN_INTERVAL).total_seconds()
@@ -1298,9 +1337,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
 
 async def async_unload_entry(hass, entry) -> bool:
-    """Unload a config entry"""
-    email = entry.data["email"]
-    login_obj = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["login_obj"]
+    """Unload a config entry."""
+    email: str = entry.data["email"]
+    login_obj: Optional[AlexaLogin] = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get("login_obj")
     _LOGGER.debug("Unloading entry: %s", hide_email(email))
     for component in ALEXA_COMPONENTS + DEPENDENT_ALEXA_COMPONENTS:
         try:
@@ -1310,7 +1349,7 @@ async def async_unload_entry(hass, entry) -> bool:
                 _LOGGER.debug("Forwarding unload entry to %s", component)
                 await hass.config_entries.async_forward_entry_unload(entry, component)
         except Exception as ex:
-            _LOGGER.error("Error unloading: %s", component)
+            _LOGGER.error("Error unloading component %s: %s", component, ex)
     await close_connections(hass, email)
     for listener in hass.data[DATA_ALEXAMEDIA]["accounts"][email][DATA_LISTENER]:
         listener()
@@ -1357,9 +1396,9 @@ async def async_unload_entry(hass, entry) -> bool:
 
 async def async_remove_entry(hass, entry) -> bool:
     """Handle removal of an entry."""
-    email = entry.data["email"]
-    obfuscated_email = hide_email(email)
-    _LOGGER.debug("Removing config entry: %s", hide_email(email))
+    email: str = entry.data["email"]
+    obfuscated_email: str = hide_email(email)
+    _LOGGER.debug("Removing config entry: %s", obfuscated_email)
     login_obj = AlexaLogin(
         url="",
         email=email,
@@ -1376,6 +1415,11 @@ async def async_remove_entry(hass, entry) -> bool:
             await login_obj.delete_cookiefile()
             _LOGGER.debug("Cookiefile %s deleted.", obfuscated_cookiefile)
         except Exception as ex:
+            if 'partitioned' in str(ex):
+                _LOGGER.warning(
+                    "Cookie error: The 'partitioned' attribute is not supported in Python 3.12. "
+                    "To fix this, manually patch the cookies.py file."
+                )
             _LOGGER.error(
                 "delete_cookiefile() exception: %s;"
                 " Manually delete cookiefile before re-adding the integration: %s",
@@ -1390,6 +1434,11 @@ async def async_remove_entry(hass, entry) -> bool:
                     "Successfully deleted cookiefile: %s", obfuscated_cookiefile
                 )
             except (OSError, EOFError, TypeError, AttributeError) as ex:
+                if 'partitioned' in str(ex):
+                    _LOGGER.warning(
+                        "Cookie error: The 'partitioned' attribute is not supported in Python 3.12. "
+                        "To fix this, manually patch the cookies.py file."
+                    )
                 _LOGGER.error(
                     "alexapy_delete_cookie() exception: %s;"
                     " Manually delete cookiefile before re-adding the integration: %s",
@@ -1410,23 +1459,23 @@ async def close_connections(hass, email: str) -> None:
     ):
         return
     account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][email]
-    login_obj = account_dict["login_obj"]
-    await login_obj.save_cookiefile()
-    await login_obj.close()
-    _LOGGER.debug(
-        "%s: Connection closed: %s", hide_email(email), login_obj.session.closed
-    )
+    login_obj: Optional[AlexaLogin] = account_dict.get("login_obj")
+    if login_obj:
+        await login_obj.save_cookiefile()
+        await login_obj.close()
+        session_closed = login_obj.session.closed if login_obj.session else "No session"
+        _LOGGER.debug(
+            "%s: Connection closed: %s", hide_email(email), session_closed
+        )
 
 
 async def update_listener(hass, config_entry):
     """Update when config_entry options update."""
     account = config_entry.data
-    email = account.get(CONF_EMAIL)
+    email: str = account.get(CONF_EMAIL)
     reload_needed: bool = False
-    for key, old_value in hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-        "options"
-    ].items():
-        new_value = config_entry.data.get(key)
+    for key, old_value in hass.data[DATA_ALEXAMEDIA]["accounts"][email]["options"].items():
+        new_value = config_entry.options.get(key, config_entry.data.get(key))
         if new_value is not None and new_value != old_value:
             hass.data[DATA_ALEXAMEDIA]["accounts"][email]["options"][key] = new_value
             _LOGGER.debug(
@@ -1444,13 +1493,14 @@ async def update_listener(hass, config_entry):
         )
 
 
-async def test_login_status(hass, config_entry, login) -> bool:
+async def test_login_status(hass, config_entry, login: AlexaLogin) -> bool:
     """Test the login status and spawn requests for info."""
 
     _LOGGER.debug("Testing login status: %s", login.status)
     if login.status and login.status.get("login_successful"):
         return True
     account = config_entry.data
+    _LOGGER.debug("Login failed for %s", hide_email(login.email))
     _LOGGER.debug("Logging in: %s %s", obfuscate(account), in_progress_instances(hass))
     _LOGGER.debug("Login stats: %s", login.stats)
     message: str = (
