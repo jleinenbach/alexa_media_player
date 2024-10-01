@@ -1,52 +1,96 @@
 {
   "config": {
     "abort": {
-      "forgot_password": "The Forgot Password page was detected. This normally is the result of too may failed logins. Amazon may require action before a relogin can be attempted.",
+      "already_configured": "Email for Alexa URL already registered.",
+      "forgot_password": "The Forgot Password page was detected. This normally is the result of too many failed logins. Amazon may require action before a relogin can be attempted.",
       "login_failed": "Alexa Media Player failed to login.",
-      "reauth_successful": "Alexa Media Player successfully reauthenticated. Please ignore the \"Aborted\" message from HA."
+      "reauth_successful": "Alexa Media Player successfully reauthenticated.",
+      "no_config_entry": "No configuration entry found.",
+      "no_url_available": "No Home Assistant URL available.",
+      "unique_id_conflict": "Unique ID already exists but no existing entry found.",
+      "unique_id_error": "Error setting unique ID.",
+      "schema_creation_failed": "Failed to create configuration schema.",
+      "login_setup_failed": "An error occurred during login setup.",
+      "proxy_creation_failed": "Failed to create proxy.",
+      "proxy_initialization_failed": "Proxy initialization failed.",
+      "login_exception": "An exception occurred during login.",
+      "login_test_failed": "Login test failed."
     },
     "error": {
-      "connection_error": "Error connecting; check network and retry",
-      "identifier_exists": "Email for Alexa URL already registered",
-      "invalid_credentials": "Invalid credentials",
+      "connection_error": "Error connecting; check network and retry.",
+      "identifier_exists": "Email for Alexa URL already registered.",
+      "invalid_credentials": "Invalid credentials.",
       "invalid_url": "URL is invalid: {message}",
-      "2fa_key_invalid": "Invalid Built-In 2FA key",
-      "unable_to_connect_hass_url": "Unable to connect to Home Assistant URL. Please check the Internal URL under Configuration -> General",
-      "unknown_error": "Unknown error: {message}"
+      "2fa_key_invalid": "Invalid Built-In 2FA key.",
+      "unable_to_connect_hass_url": "Unable to connect to Home Assistant URL: {hass_url}\nError: {error}",
+      "unknown_error": "Unknown error: {message}",
+      "otp_generation_failed": "Failed to generate OTP token.",
+      "login_error": "Login error: {message}",
+      "login_setup_failed": "Login setup failed: {message}",
+      "invalid_input": "Invalid input: {message}",
+      "hass_url_invalid": "Unable to connect to Home Assistant URL: {hass_url}\nError: {error}",
+      "proxy_url_generation_failed": "Failed to generate proxy URL: {message}",
+      "callback_url_generation_failed": "Failed to generate callback URL: {message}",
+      "proxy_setup_failed": "Failed to set up proxy: {message}",
+      "schema_creation_failed": "Failed to create schema: {message}",
+      "unique_id_error": "Error setting unique ID: {message}",
+      "login_exception": "An exception occurred during login: {message}",
+      "invalid_domain": "Invalid domain: {message}",
+      "email_required": "Email is required.",
+      "password_required": "Password is required.",
+      "reconfigure_failed": "Reconfiguration failed: {message}"
     },
     "step": {
       "user": {
         "data": {
-          "url": "Amazon region domain (e.g., amazon.co.uk)",
+          "url": "Amazon region domain (e.g., amazon.com, amazon.co.uk)",
           "email": "Email Address",
           "password": "Password",
-          "securitycode": "[%key_id:55616596%]",
+          "securitycode": "Two-Factor Authentication Code",
           "otp_secret": "Built-in 2FA App Key - This is 52 characters, not six!",
           "hass_url": "Local URL to access Home Assistant",
-          "public_url": "Public Url to access Home Assistant",
-          "include_devices": "Included device (comma separated)",
-          "exclude_devices": "Excluded device (comma separated)",
+          "public_url": "Public URL to access Home Assistant",
+          "include_devices": "Included devices (comma separated)",
+          "exclude_devices": "Excluded devices (comma separated)",
           "scan_interval": "Seconds between scans",
           "queue_delay": "Seconds to wait to queue commands together",
           "extended_entity_discovery": "Include devices connected via Echo",
           "debug": "Advanced debugging"
         },
-        "description": "Required *",
+        "description": "Required fields are marked with *",
         "title": "Alexa Media Player - Configuration"
       },
       "proxy_warning": {
         "data": {
-          "proxy_warning": "Ignore and Continue - I understand that no support for login issues are provided for bypassing this warning."
+          "proxy_warning": "Ignore and Continue - I understand that no support for login issues is provided for bypassing this warning."
         },
-        "description": "The HA server cannot connect to the URL provided: {hass_url}.\n> {error}\n\nTo fix this, please confirm your **HA server** can reach {hass_url}. This field is from the External URL under Configuration -> General but you can try your internal URL.\n\nIf you are **certain** your client can reach this URL, you can bypass this warning.",
+        "description": "The HA server cannot connect to the URL provided: {hass_url}.\nError: {error}\n\nTo fix this, please confirm your **HA server** can reach {hass_url}. This field is from the External URL under Configuration -> General, but you can try your internal URL.\n\nIf you are **certain** your client can reach this URL, you can bypass this warning.",
         "title": "Alexa Media Player - Unable to Connect to HA URL"
       },
       "totp_register": {
         "data": {
           "registered": "OTP from the Built-in 2FA App Key confirmed successfully."
         },
-        "description": "**{email} - alexa.{url}**  \nHave you successfully confirmed an OTP from the Built-in 2FA App Key with Amazon?  \n >OTP Code {message}",
+        "description": "**{email} - alexa.{url}**\nHave you successfully confirmed an OTP from the Built-in 2FA App Key with Amazon?\n>OTP Code: {message}",
         "title": "Alexa Media Player - OTP Confirmation"
+      },
+      "reconfigure": {
+        "data": {
+          "url": "Amazon region domain (e.g., amazon.com, amazon.co.uk)",
+          "email": "Email Address",
+          "password": "Password",
+          "otp_secret": "Built-in 2FA App Key - This is 52 characters, not six!",
+          "hass_url": "Local URL to access Home Assistant",
+          "public_url": "Public URL to access Home Assistant",
+          "include_devices": "Included devices (comma separated)",
+          "exclude_devices": "Excluded devices (comma separated)",
+          "scan_interval": "Seconds between scans",
+          "queue_delay": "Seconds to wait to queue commands together",
+          "extended_entity_discovery": "Include devices connected via Echo",
+          "debug": "Advanced debugging"
+        },
+        "description": "Please review and update your Alexa Media Player settings.",
+        "title": "Alexa Media Player - Reconfiguration"
       }
     }
   },
@@ -55,15 +99,15 @@
       "init": {
         "data": {
           "public_url": "Public URL to access Home Assistant (including trailing '/')",
-          "include_devices": "Included device (comma separated)",
-          "exclude_devices": "Excluded device (comma separated)",
+          "include_devices": "Included devices (comma separated)",
+          "exclude_devices": "Excluded devices (comma separated)",
           "scan_interval": "Seconds between scans",
           "queue_delay": "Seconds to wait to queue commands together",
           "extended_entity_discovery": "Include devices connected via Echo",
           "debug": "Advanced debugging"
         },
-        "description": "Required *",
-        "title": "Alexa Media Player - Reconfiguration"
+        "description": "Configure additional options for Alexa Media Player.",
+        "title": "Alexa Media Player - Options"
       }
     }
   },
@@ -78,7 +122,7 @@
         },
         "entries": {
           "name": "Number of Entries",
-          "description": "Number of entries to clear from 1 to 50. If empty, clear 50."
+          "description": "Number of entries to clear from 1 to 50. If empty, clears 50."
         }
       }
     },
@@ -88,7 +132,7 @@
       "fields": {
         "email": {
           "name": "Email address",
-          "description": "Accounts to clear. Empty will clear all."
+          "description": "Accounts to logout. Empty will logout all."
         }
       }
     },
