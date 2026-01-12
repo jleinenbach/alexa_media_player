@@ -260,7 +260,7 @@ class AlexaLight(CoordinatorEntity, LightEntity):
             brightness if brightness is not None else self.brightness
         )
         self._requested_kelvin = (
-            adjusted_kelvin if adjusted_kelvin is not None else self.color_temp
+            adjusted_kelvin if adjusted_kelvin is not None else self.color_temp_kelvin
         )
         if adjusted_hs is not None:
             self._requested_hs = adjusted_hs

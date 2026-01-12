@@ -1687,9 +1687,9 @@ async def test_login_status(hass, config_entry, login) -> bool:
         f"Reauthenticate {login.email} on the [Integrations](/config/integrations) page. "
     )
     if login.stats.get("login_timestamp") != datetime(1, 1, 1):
-        elaspsed_time: str = str(datetime.now() - login.stats.get("login_timestamp"))
+        elapsed_time: str = str(datetime.now() - login.stats.get("login_timestamp"))
         api_calls: int = login.stats.get("api_calls")
-        message += f"Relogin required after {elaspsed_time} and {api_calls} api calls."
+        message += f"Relogin required after {elapsed_time} and {api_calls} api calls."
     async_create_persistent_notification(
         hass,
         title="Alexa Media Reauthentication Required",
