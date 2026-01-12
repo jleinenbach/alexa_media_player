@@ -128,7 +128,7 @@ an issue here: {ISSUE_URL}
 Domain: {DOMAIN}
 Version: {version}
 API Library: alexapy
-Version: {alexapy_version}
+alexapy Version: {alexapy_version}
 --------------------------------------------------------------------
 """
 
