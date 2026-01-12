@@ -12,7 +12,7 @@
       "invalid_auth": "O ‘login’ não foi bem-sucedido. Verifique novamente o seu endereço eletrónico, senha e chave de autenticação.",
       "invalid_credentials": "Credenciais inválidas",
       "invalid_url": "O URL é inválido: {message}",
-      "oauth_error": "Não foi possível concluir o ‘login’ Coautor. Tente novamente.",
+      "oauth_error": "Não foi possível concluir o login OAuth. Tente novamente.",
       "unable_to_connect_hass_url": "Não foi possível conectar ao URL local do Home Assistant. Verifique o URL em Configurações > Sistema > Rede > URL do Home Assistant > Rede local.",
       "unknown_error": "Erro desconhecido: {message}"
     },
@@ -103,7 +103,7 @@
       "fields": {
         "entity_id": {
           "description": "Entidade para obter o histórico de",
-          "name": "Selecione o media MPlayer:"
+          "name": "Selecione o leitor multimédia:"
         },
         "entries": {
           "description": "Número de entradas para obter",
@@ -117,7 +117,7 @@
       "fields": {
         "entity_id": {
           "description": "Entidade para restaurar o nível de volume anterior em",
-          "name": "Selecione o media MPlayer:"
+          "name": "Selecione o leitor multimédia:"
         }
       },
       "name": "Restaurar volume anterior"

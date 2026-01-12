@@ -44,7 +44,7 @@
           "public_url": "Public URL shared with external hosted services",
           "queue_delay": "Delay to queue multiple commands together (seconds)",
           "scan_interval": "Scheduled polling interval (seconds)",
-          "securitycode": "[%key_id:55616596%]",
+          "securitycode": "\u0415\u0434\u043d\u043e\u043a\u0440\u0430\u0442\u043d\u0430 \u043f\u0430\u0440\u043e\u043b\u0430 (OTP)",
           "should_get_network": "Discover Alexa network",
           "url": "Amazon region domain (e.g., amazon.co.uk)"
         },

@@ -44,7 +44,7 @@
           "public_url": "外部ホスティング・サービスと共有される公開URL",
           "queue_delay": "コマンドをキューにまとめて待機させる秒数",
           "scan_interval": "スキャン間隔秒数",
-          "securitycode": "[%key_id:55616596%]",
+          "securitycode": "\u30ef\u30f3\u30bf\u30a4\u30e0\u30d1\u30b9\u30ef\u30fc\u30c9 (OTP)",
           "should_get_network": "Alexaネットワークを探索",
           "url": "Amazon 地域ドメイン (例: amazon.co.jp)"
         },
