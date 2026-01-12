@@ -1,0 +1,43 @@
+name: Upload Release ZIP
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to create release ZIP for'
+        required: true
+
+jobs:
+  upload-zip:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag_name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag_name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create alexa_media.zip
+        run: |
+          cd custom_components/alexa_media
+          zip -r alexa_media.zip ./
+
+      - name: Upload ZIP to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: custom_components/alexa_media/alexa_media.zip
+          asset_name: alexa_media.zip
+          tag: ${{ steps.tag.outputs.tag_name }}
+          overwrite: true
