@@ -44,7 +44,7 @@
           "public_url": "Offentlig URL delt med eksterne vertsbaserte tjenester",
           "queue_delay": "Forsinkelse for å sette flere kommandoer sammen i kø (sekunder)",
           "scan_interval": "Planlagt avstemningsintervall (sekunder)",
-          "securitycode": "[%key_id:55616596%]",
+          "securitycode": "Engangspassord (OTP)",
           "should_get_network": "Oppdag Alexa-nettverket",
           "url": "Amazon-regiondomenet (f.eks. Amazon.co.uk)"
         },

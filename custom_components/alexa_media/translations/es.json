@@ -26,16 +26,16 @@
       },
       "totp_register": {
         "data": {
-          "registered": "Sí, el código ATP fue verificado"
+          "registered": "Sí, el código OTP fue verificado"
         },
-        "description": "**{email} - alexa.{url}** \n¿Has verificado el código ATP en Amazon 2SV?\n>Código ATP: {message}",
+        "description": "**{email} - alexa.{url}** \n¿Has verificado el código OTP en Amazon 2SV?\n>Código OTP: {message}",
         "title": "Alexa Media Player - OTP Confirmation"
       },
       "user": {
         "data": {
           "debug": "Depuración avanzada",
           "email": "Dirección de correo electrónico",
-          "exclude_devices": "Dispositivo excluido (separado por comas)o Excluir estos dispositivos de todos (separados por comas)",
+          "exclude_devices": "o Excluir estos dispositivos de todos (separados por comas)",
           "extended_entity_discovery": "Incluye sensores, interruptores y luces adicionales.",
           "hass_url": "URL de red local para acceder a Home Assistant",
           "include_devices": "Incluya solo estos dispositivos (separados por comas)",
@@ -55,7 +55,7 @@
   },
   "issues": {
     "deprecated_yaml_configuration": {
-      "description": "La configuración YAML de Alexa Media Placer está obsoleta.\nElimina `alexa_media` de tu configuración, reinicia Home Assistant y usa la interfaz de usuario para configurarlo.\nAjustes > Dispositivos y servicios > Integraciones > AÑADIR INTEGRACIÓN",
+      "description": "La configuración YAML de Alexa Media Player está obsoleta.\nElimina `alexa_media` de tu configuración, reinicia Home Assistant y usa la interfaz de usuario para configurarlo.\nAjustes > Dispositivos y servicios > Integraciones > AÑADIR INTEGRACIÓN",
       "title": "La configuración de YAML está obsoleta"
     }
   },

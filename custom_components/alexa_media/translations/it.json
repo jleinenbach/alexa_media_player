@@ -19,7 +19,7 @@
     "step": {
       "proxy_warning": {
         "data": {
-          "proxy_warning": "Ignore and Continue - I understand that no support for login issues are provided for bypassing this warning."
+          "proxy_warning": "Ignora e continua - Comprendo che non viene fornito supporto per problemi di accesso se si ignora questo avviso."
         },
         "description": "Il server HA non riesce a connettersi all'URL fornito: {hass_url}.\n> {error}\n\nPer risolvere questo problema, verifica che il tuo browser possa raggiungere {hass_url}. Questo campo si trova in Impostazioni > Sistema > Rete > URL Home Assistant.\n\nSe sei **certo** che il tuo browser possa raggiungere questo URL, puoi ignorare questo avviso.",
         "title": "Alexa Media Player - Impossibile connettersi all'URL HA"
@@ -43,7 +43,7 @@
           "password": "Password",
           "public_url": "URL pubblico condiviso con servizi ospitati esterni",
           "queue_delay": "Ritardo per mettere in coda più comandi contemporaneamente (secondi)",
-          "scan_interval": "Intervallo di pollina pianificato (secondi)",
+          "scan_interval": "Intervallo di polling pianificato (secondi)",
           "securitycode": "Codice 2FA (raccomandato per evitare problemi di login)",
           "should_get_network": "Scopri la rete Alexa",
           "url": "Regione del dominio Amazon (ad es., amazon.it)"
@@ -55,7 +55,7 @@
   },
   "issues": {
     "deprecated_yaml_configuration": {
-      "description": "La configurazione YAML di Alexa Media Placer è obsoleta.\nRimuovi `alexa_media` dalla configurazione, riavvia Homo Assistano e utilizza l'interfaccia utente per configurarla.\nImpostazioni > Dispositivi e servizi > Integrazioni > AGGIUNGI INTEGRAZIONE",
+      "description": "La configurazione YAML di Alexa Media Player è obsoleta.\nRimuovi `alexa_media` dalla configurazione, riavvia Home Assistant e utilizza l'interfaccia utente per configurarla.\nImpostazioni > Dispositivi e servizi > Integrazioni > AGGIUNGI INTEGRAZIONE",
       "title": "La configurazione YAML è deprecata"
     }
   },
@@ -69,7 +69,7 @@
           "include_devices": "Includi solo questi dispositivi (separati da virgole)",
           "public_url": "URL pubblico condiviso con servizi ospitati esterni",
           "queue_delay": "Ritardo per mettere in coda più comandi contemporaneamente (secondi)",
-          "scan_interval": "Frequenza di pollina pianificata (secondi)",
+          "scan_interval": "Frequenza di polling pianificata (secondi)",
           "should_get_network": "Scopri la rete Alexa"
         },
         "description": "* Voci obbligatorie\nNota: **L'individuazione estesa delle entità** richiede che **Scopri la rete Alexa** sia abilitata.",
@@ -79,7 +79,7 @@
   },
   "services": {
     "enable_network_discovery": {
-      "description": "Riattiva la rilevazione della rete Alexa in modo che il successivo ciclo di pollina rilevi i dispositivi Alexa per gli account selezionati.",
+      "description": "Riattiva la rilevazione della rete Alexa in modo che il successivo ciclo di polling rilevi i dispositivi Alexa per gli account selezionati.",
       "fields": {
         "email": {
           "description": "Indirizzo email dell'account Alexa facoltativo o elenco d'indirizzi email. Se vuoto, tutti gli account noti verranno aggiornati.",

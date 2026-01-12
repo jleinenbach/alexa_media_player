@@ -21,7 +21,7 @@
         "data": {
           "proxy_warning": "Negeren en doorgaan - Ik begrijp dat er geen ondersteuning wordt geboden bij inlogproblemen wanneer ik deze waarschuwing  omzeil."
         },
-        "description": "De HA server kan geen verbinding maken met de opgegeven URL: {hass_url}.\n> {error}\n\nOm dit op te lossen, controleer of uw browser {hass_url} kan bereiken. Dit veld vindt u in Instellingen > Systeem > Netwerk > Home Assistant-URL.Als u **zeker** weet dat uw browser deze URL kan bereiken, kunt u deze waarschuwing negeren.\n\nAls u er **zeker van bent** dat uw browser deze URL kan bereiken, kunt u deze waarschuwing negeren.",
+        "description": "De HA server kan geen verbinding maken met de opgegeven URL: {hass_url}.\n> {error}\n\nOm dit op te lossen, controleer of uw browser {hass_url} kan bereiken. Dit veld vindt u in Instellingen > Systeem > Netwerk > Home Assistant-URL.\n\nAls u er **zeker van bent** dat uw browser deze URL kan bereiken, kunt u deze waarschuwing negeren.",
         "title": "Alexa Mediaspeler - Kan geen verbinding maken met HA URL"
       },
       "totp_register": {
@@ -44,7 +44,7 @@
           "public_url": "Openbare URL gedeeld met externe hostingdiensten",
           "queue_delay": "Vertraging om meerdere opdrachten tegelijk in de wachtrij te plaatsen (seconden)",
           "scan_interval": "Gepland pollinginterval (seconden)",
-          "securitycode": "[%key_id:55616596%]",
+          "securitycode": "Eenmalig wachtwoord (OTP)",
           "should_get_network": "Ontdek het Alexa-netwerk",
           "url": "Domeinnaam van Amazon regio (bijv: amazon.nl)"
         },

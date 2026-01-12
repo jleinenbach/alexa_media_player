@@ -44,7 +44,7 @@
           "public_url": "Öffentliche URL, die mit extern gehosteten Diensten geteilt wird",
           "queue_delay": "Verzögerung beim Zusammenführen mehrerer Befehle in die Warteschlange (Sekunden)",
           "scan_interval": "Geplantes Abfrageintervall (Sekunden)",
-          "securitycode": "[%key_id:55616596%]",
+          "securitycode": "Einmalpasswort (OTP)",
           "should_get_network": "Entdecken Sie das Alexa-Netzwerk",
           "url": "Amazon Region (z.B. amazon.de)"
         },
