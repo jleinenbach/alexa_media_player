@@ -8,7 +8,6 @@ from unittest.mock import patch
 
 from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
 
-
 class TestUpdateRecurringAlarm:
     """Test the _update_recurring_alarm method of AlexaMediaNotificationSensor.
 
