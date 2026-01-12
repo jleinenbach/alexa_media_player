@@ -819,15 +819,18 @@ class AlexaMediaNotificationSensor(SensorEntity):
 
             # Some consumers expect a single string label for the "next" item.
             # These keys are used by card-alexa-alarms-timers.
+            # Note: Timer and Reminder subclasses set their own label attributes
+            # in extra_state_attributes, so we only set "alarm" here for AlarmSensor.
             if legacy_active:
                 first = legacy_active[0]
-                label_key = self._LABEL_KEY_MAP.get(self._type)
-                if label_key:
-                    attr[self._type.lower()] = first.get(label_key)
-
-                    if self._type == "Reminder":
-                        # Secondary reminder label (when present)
-                        attr["reminder_sub_label"] = first.get("reminderSubLabel")
+                if self._type == "Alarm":
+                    label_key = self._LABEL_KEY_MAP.get(self._type)
+                    if label_key:
+                        attr[self._type.lower()] = first.get(label_key)
+                elif self._type == "Reminder":
+                    # Secondary reminder label (when present)
+                    # Note: main "reminder" label is set by ReminderSensor
+                    attr["reminder_sub_label"] = first.get("reminderSubLabel")
         return attr
 
 
