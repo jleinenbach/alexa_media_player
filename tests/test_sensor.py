@@ -1,4 +1,7 @@
-"""Tests for sensor module."""
+"""Tests for sensor module.
+
+Tests the sensor functionality using pytest-homeassistant-custom-component.
+"""
 
 import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -142,6 +145,8 @@ class TestTriggerEvent:
         assert call_args[0][0] == "alexa_media_notification_event"
         assert call_args[1]["event_data"]["event"] == sensor._active[0]
 
+from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
+
 
 class TestUpdateRecurringAlarm:
     """Test the _update_recurring_alarm method of AlexaMediaNotificationSensor.
@@ -170,8 +175,6 @@ class TestUpdateRecurringAlarm:
         always be True (method object never equals an integer), potentially
         causing infinite loops or incorrect alarm times.
         """
-        from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
-
         # Create a minimal mock for the sensor
         sensor = object.__new__(AlexaMediaNotificationSensor)
         sensor._sensor_property = "alarmTime"
@@ -227,8 +230,6 @@ class TestUpdateRecurringAlarm:
 
     def test_recurring_alarm_advances_to_correct_weekday(self) -> None:
         """Test that a recurring alarm advances to the correct weekday."""
-        from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
-
         sensor = object.__new__(AlexaMediaNotificationSensor)
         sensor._sensor_property = "alarmTime"
 
@@ -273,8 +274,6 @@ class TestUpdateRecurringAlarm:
 
     def test_alarm_on_correct_day_not_modified(self) -> None:
         """Test that an alarm already on a correct day is not modified."""
-        from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
-
         sensor = object.__new__(AlexaMediaNotificationSensor)
         sensor._sensor_property = "alarmTime"
 
@@ -316,8 +315,6 @@ class TestUpdateRecurringAlarm:
 
     def test_alarm_off_not_advanced(self) -> None:
         """Test that an alarm with status OFF is not advanced."""
-        from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
-
         sensor = object.__new__(AlexaMediaNotificationSensor)
         sensor._sensor_property = "alarmTime"
 
@@ -348,3 +345,64 @@ class TestUpdateRecurringAlarm:
 
         # Alarm should NOT be advanced since status is OFF
         assert result[1]["alarmTime"] == wednesday
+
+    def test_alarm_without_recurrence_not_modified(self) -> None:
+        """Test that an alarm without recurring pattern is not modified."""
+        sensor = object.__new__(AlexaMediaNotificationSensor)
+        sensor._sensor_property = "alarmTime"
+
+        wednesday = datetime.datetime(2024, 1, 3, 8, 0, 0)
+
+        value = (
+            "alarm_id",
+            {
+                "status": "ON",
+                "alarmTime": wednesday,
+                "type": "Alarm",
+                # No recurringPattern
+            },
+        )
+
+        future_time = datetime.datetime(2024, 1, 10, 8, 0, 0)
+
+        with patch(
+            "custom_components.alexa_media.sensor.dt.now", return_value=future_time
+        ):
+            result = sensor._update_recurring_alarm(value)
+
+        # Alarm should NOT be advanced since there's no recurrence pattern
+        assert result[1]["alarmTime"] == wednesday
+
+    def test_reminder_type_handled(self) -> None:
+        """Test that reminder type alarms are handled correctly."""
+        sensor = object.__new__(AlexaMediaNotificationSensor)
+        sensor._sensor_property = "alarmTime"  # Reminders also use alarmTime
+
+        wednesday = datetime.datetime(2024, 1, 3, 8, 0, 0)
+
+        value = (
+            "reminder_id",
+            {
+                "status": "ON",
+                "alarmTime": wednesday,
+                "type": "Reminder",
+                "recurringPattern": "XXXX-WXX-5",
+            },
+        )
+
+        future_time = datetime.datetime(2024, 1, 10, 8, 0, 0)
+
+        with (
+            patch(
+                "custom_components.alexa_media.sensor.dt.now", return_value=future_time
+            ),
+            patch(
+                "custom_components.alexa_media.sensor.RECURRING_PATTERN_ISO_SET",
+                {"XXXX-WXX-5": {5}},
+            ),
+        ):
+            result = sensor._update_recurring_alarm(value)
+
+        result_alarm = result[1]["alarmTime"]
+        # Reminders should also be advanced correctly
+        assert result_alarm.isoweekday() == 5
