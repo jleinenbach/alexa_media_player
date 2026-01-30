@@ -657,9 +657,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 app["serialNumber"]
                             ]
                         ) = device
-                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][serial] = (
-                    device
-                )
+                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][
+                    serial
+                ] = device
                 continue
             if exclude and dev_name in exclude:
                 exclude_filter.append(dev_name)
@@ -670,9 +670,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 app["serialNumber"]
                             ]
                         ) = device
-                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][serial] = (
-                    device
-                )
+                hass.data[DATA_ALEXAMEDIA]["accounts"][email]["excluded"][
+                    serial
+                ] = device
                 continue
 
             if (
@@ -1548,13 +1548,10 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     "PUSH_DELETE_DOPPLER_ACTIVITIES",  # Delete Alexa history
                 ]:
                     pass
-                elif (
-                    command
-                    in [
-                        "PUSH_LIST_CHANGE",  # Clear a shopping list https://github.com/alandtse/alexa_media_player/issues/1190
-                        "PUSH_LIST_ITEM_CHANGE",  # Update shopping list
-                    ]
-                ):
+                elif command in [
+                    "PUSH_LIST_CHANGE",  # Clear a shopping list https://github.com/alandtse/alexa_media_player/issues/1190
+                    "PUSH_LIST_ITEM_CHANGE",  # Update shopping list
+                ]:
                     # To-do
                     pass
                 elif command in [
@@ -1562,12 +1559,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     "PUSH_DEVICE_SETUP_STATE_CHANGE",  # Likely device changes mid setup
                 ]:
                     pass
-                elif (
-                    command
-                    in [
-                        "PUSH_MEDIA_PREFERENCE_CHANGE",  # Disliking or liking songs, https://github.com/alandtse/alexa_media_player/issues/1599
-                    ]
-                ):
+                elif command in [
+                    "PUSH_MEDIA_PREFERENCE_CHANGE",  # Disliking or liking songs, https://github.com/alandtse/alexa_media_player/issues/1599
+                ]:
                     pass
                 else:
                     _LOGGER.debug(
@@ -1619,9 +1613,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     )
                 ):
                     _LOGGER.debug("Discovered new media_player %s", hide_serial(serial))
-                    (
-                        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["new_devices"]
-                    ) = True
+                    (hass.data[DATA_ALEXAMEDIA]["accounts"][email]["new_devices"]) = (
+                        True
+                    )
                     if coordinator:
                         await coordinator.async_request_refresh()
 
@@ -1631,9 +1625,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
 
         email: str = login_obj.email
         _LOGGER.debug("%s: HTTP2push successfully connected", hide_email(email))
-        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] = (
-            0  # set errors to 0
-        )
+        hass.data[DATA_ALEXAMEDIA]["accounts"][email][
+            "http2error"
+        ] = 0  # set errors to 0
         hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2_lastattempt"] = time.time()
 
     @callback
@@ -1670,12 +1664,12 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                 errors,
                 delay,
             )
-            hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2_lastattempt"] = (
-                time.time()
+            hass.data[DATA_ALEXAMEDIA]["accounts"][email][
+                "http2_lastattempt"
+            ] = time.time()
+            http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2"] = (
+                await http2_connect()
             )
-            http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-                "http2"
-            ] = await http2_connect()
             errors = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] = (
                 hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2error"] + 1
             )
@@ -1748,9 +1742,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         else config.get(CONF_SCAN_INTERVAL)
     )
     hass.data[DATA_ALEXAMEDIA]["accounts"][email]["login_obj"] = login_obj
-    http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-        "http2"
-    ] = await http2_connect()
+    http2_enabled = hass.data[DATA_ALEXAMEDIA]["accounts"][email]["http2"] = (
+        await http2_connect()
+    )
     coordinator = hass.data[DATA_ALEXAMEDIA]["accounts"][email].get("coordinator")
     if coordinator is None:
         _LOGGER.debug("%s: Creating coordinator", hide_email(email))
@@ -1971,7 +1965,9 @@ async def test_login_status(hass, config_entry, login) -> bool:
     account = config_entry.data
     _LOGGER.debug("Logging in: %s %s", obfuscate(account), in_progress_instances(hass))
     _LOGGER.debug("Login stats: %s", login.stats)
-    message: str = f"Reauthenticate {login.email} on the [Integrations](/config/integrations) page. "
+    message: str = (
+        f"Reauthenticate {login.email} on the [Integrations](/config/integrations) page. "
+    )
     if login.stats.get("login_timestamp") != datetime(1, 1, 1):
         elapsed_time: str = str(datetime.now() - login.stats.get("login_timestamp"))
         api_calls: int = login.stats.get("api_calls")
