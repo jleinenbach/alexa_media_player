@@ -291,6 +291,24 @@ class AlexaMediaServices:
 
         async def _collect_history_for_account(login_obj) -> None:
             """Collect history entries for a single account matching the target device."""
+            # Ensure CSRF token is available; a None token causes a
+            # TypeError inside aiohttp when alexapy passes it as a
+            # header value.
+            if login_obj.csrf_token is None:
+                _LOGGER.debug(
+                    "CSRF token unavailable, refreshing before history request"
+                )
+                try:
+                    await login_obj.get_csrf_token()
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.debug("Failed to refresh CSRF token, skipping history request")
+                    return
+                if login_obj.csrf_token is None:
+                    _LOGGER.debug(
+                        "CSRF token still unavailable after refresh, "
+                        "skipping history request"
+                    )
+                    return
             # Get the history records. Input: time_from, time_to (both None here).
             history_data = await AlexaAPI.get_customer_history_records(
                 login_obj, None, None
