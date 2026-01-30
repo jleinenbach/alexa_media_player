@@ -301,7 +301,9 @@ class AlexaMediaServices:
                 try:
                     await login_obj.get_csrf_token()
                 except Exception:  # pylint: disable=broad-except
-                    _LOGGER.debug("Failed to refresh CSRF token, skipping history request")
+                    _LOGGER.debug(
+                        "Failed to refresh CSRF token, skipping history request"
+                    )
                     return
                 if login_obj.csrf_token is None:
                     _LOGGER.debug(
