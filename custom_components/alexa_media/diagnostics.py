@@ -25,27 +25,6 @@ from .const import (
 )
 
 
-# Lazy imports with fallback for alexapy functions
-def _get_hide_email():
-    """Get hide_email function with fallback."""
-    try:
-        from alexapy import hide_email  # pylint: disable=import-outside-toplevel
-
-        return hide_email
-    except (ImportError, AttributeError):
-        return lambda x: "****@****.***"
-
-
-def _get_hide_serial():
-    """Get hide_serial function with fallback."""
-    try:
-        from alexapy import hide_serial  # pylint: disable=import-outside-toplevel
-
-        return hide_serial
-    except (ImportError, AttributeError):
-        return lambda x: "****" if x else None
-
-
 # --------------------
 # Local Functions
 # --------------------
@@ -57,14 +36,21 @@ def _safe_dt(val: Any) -> str | None:
 
 
 def _maybe_len(val: Any) -> int | None:
-    """Return length of collection or None if not a collection."""
+    """Return the length of common container types or None if not applicable."""
     if isinstance(val, (list, tuple, dict, set)):
         return len(val)
     return None
 
 
 def _maybe_keys(val: Any, limit: int = 50) -> list[str] | None:
-    """Extract and obfuscate mapping keys, limited to sample size."""
+    """Return a sanitized sample of mapping keys for diagnostics.
+
+    If ``val`` is a mapping, return up to ``limit`` obfuscated keys to provide
+    structural insight without exposing sensitive data. Email-like keys are
+    redacted when possible; otherwise keys are shortened to a non-identifying
+    form. Returns ``None`` if ``val`` is not a mapping or keys cannot be read.
+    """
+
     if isinstance(val, Mapping):
         try:
             # Sample up to `limit` keys to keep diagnostics small.
@@ -73,10 +59,13 @@ def _maybe_keys(val: Any, limit: int = 50) -> list[str] | None:
                 # Emails/titles/tokens sometimes appear as keys in AMP structures.
                 if re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", s):
                     try:
-                        hide_email = _get_hide_email()
+                        from alexapy import (  # pylint: disable=import-outside-toplevel
+                            hide_email,
+                        )
+
                         return hide_email(s)
-                    except (TypeError, ValueError):
-                        pass  # Fall through to obfuscate
+                    except (ImportError, AttributeError, TypeError, ValueError):
+                        pass
                 return _obfuscate_identifier(s)
 
             return sorted(_safe_key(k) for k in islice(val.keys(), limit))
@@ -149,7 +138,8 @@ def _find_coordinators(obj: Any) -> list[DataUpdateCoordinator]:
                     for v in vars(x).values():
                         walk(v)
                 except (AttributeError, TypeError, ValueError):
-                    pass  # Skip if vars() fails
+                    # Ignore attributes that cannot be introspected via vars()
+                    pass
             return
         if isinstance(x, Mapping):
             for v in x.values():
@@ -285,7 +275,12 @@ def _summarize_amp_entry_runtime(entry_runtime: Any) -> dict:
 
 
 def _obfuscate_identifier(val: Any) -> str:
-    """Obfuscate an identifier, showing only first and last 2 characters."""
+    """Return a shortened, non-identifying representation of a value.
+
+    Non-string, empty, or very short values are fully masked. Longer strings
+    are reduced to a minimal prefix and suffix to aid debugging without
+    exposing the original identifier.
+    """
     if not isinstance(val, str) or not val or len(val) <= 4:
         return "****"
     return f"{val[:2]}...{val[-2:]}"
@@ -295,11 +290,16 @@ def _obfuscate_title_with_email(title: str | None, email: str | None) -> str | N
     """Obfuscate email in config entry title using the same mechanism as AMP logs."""
     if not title or not email:
         return title
+
     try:
-        hide_email = _get_hide_email()
-        return title.replace(email, hide_email(email))
-    except (TypeError, ValueError):
-        return title
+        # Lazy import to keep diagnostics import cheap
+        from alexapy import hide_email  # pylint: disable=import-outside-toplevel
+
+        redacted = hide_email(email)
+    except (ImportError, AttributeError, TypeError, ValueError):
+        redacted = _obfuscate_identifier(email)
+
+    return title.replace(email, redacted)
 
 
 def _get_safe_config_entry_title(config_entry: ConfigEntry) -> str | None:
@@ -412,7 +412,14 @@ async def async_get_device_diagnostics(
 ) -> dict:
     """Return diagnostics for a specific device."""
     safe_title = _get_safe_config_entry_title(config_entry)
-    hide_serial = _get_hide_serial()
+
+    try:
+        # Lazy import to keep diagnostics import cheap
+        from alexapy import hide_serial  # pylint: disable=import-outside-toplevel
+
+        safe_serial = hide_serial(device.serial_number)
+    except (ImportError, AttributeError, TypeError, ValueError):
+        safe_serial = _obfuscate_identifier(device.serial_number)
 
     data: dict = {
         "device": {
@@ -422,7 +429,7 @@ async def async_get_device_diagnostics(
             "manufacturer": device.manufacturer,
             "model": device.model,
             "sw_version": device.sw_version,
-            "serial_number": hide_serial(device.serial_number),
+            "serial_number": safe_serial,
             "identifiers": sorted(
                 (domain, _obfuscate_identifier(value))
                 for domain, value in device.identifiers
