@@ -686,9 +686,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
 
     def _trigger_event(self, time_date) -> None:
         if not self._active:
-            _LOGGER.debug(
-                "%s: Skipping event firing, no active notifications", self
-            )
+            _LOGGER.debug("%s: Skipping event firing, no active notifications", self)
             return
         _LOGGER.debug(
             "%s:Firing %s at %s",

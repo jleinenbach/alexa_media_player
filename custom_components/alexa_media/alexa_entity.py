@@ -13,7 +13,7 @@ from datetime import datetime
 import json
 import logging
 import re
-from typing import Any, Optional, TypedDict
+from typing import Any, TypedDict
 
 from alexapy import AlexaAPI, AlexaLogin
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
