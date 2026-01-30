@@ -1766,6 +1766,15 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         coordinator.update_interval = timedelta(
             seconds=scan_interval * 10 if http2_enabled else scan_interval
         )
+    # Fetch last_called BEFORE the coordinator refresh so that the stored
+    # data is already available when media_player entities are first created
+    # inside async_update_data().  Their refresh() → _get_last_called() will
+    # then find the stored serial and set _last_called = True for the correct
+    # device, preventing an empty-sequence error in user templates that filter
+    # on last_called.
+    _LOGGER.debug("%s: setup_alexa: Updating last_called", hide_email(email))
+    await update_last_called(login_obj)
+
     # Fetch initial data so we have data when entities subscribe
     _LOGGER.debug("%s: setup_alexa: Refreshing coordinator", hide_email(email))
     await coordinator.async_refresh()
@@ -1774,9 +1783,6 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         hass, functions={"update_last_called": update_last_called}
     )
     await alexa_services.register()
-
-    _LOGGER.debug("%s: setup_alexa: Updating last_called", hide_email(email))
-    await update_last_called(login_obj)
 
     return True
 
