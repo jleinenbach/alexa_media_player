@@ -85,6 +85,7 @@ from .helpers import (
     _existing_serials,
     alarm_just_dismissed,
     calculate_uuid,
+    ensure_csrf_valid,
     safe_get,
 )
 from .notify import async_unload_entry as notify_async_unload_entry
@@ -961,29 +962,12 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         """
 
         if not isinstance(last_called, dict) or not last_called.get("summary"):
-            # Ensure CSRF token is available; a None token causes a
-            # TypeError inside aiohttp's header writer when alexapy
-            # passes it as the "anti-csrftoken-a2z" header value.
-            if login_obj.csrf_token is None:
-                _LOGGER.debug(
-                    "%s: CSRF token unavailable, refreshing before last_called update",
-                    hide_email(email),
-                )
-                try:
-                    await login_obj.get_csrf_token()
-                except Exception:  # pylint: disable=broad-except
-                    _LOGGER.debug(
-                        "%s: Failed to refresh CSRF token, skipping last_called update",
-                        hide_email(email),
-                    )
-                    return
-                if login_obj.csrf_token is None:
-                    _LOGGER.debug(
-                        "%s: CSRF token still unavailable after refresh, "
-                        "skipping last_called update",
-                        hide_email(email),
-                    )
-                    return
+            # Ensure the CSRF token is present *and* not expired.  alexapy
+            # internally refreshes expired tokens, but when the refresh
+            # fails it assigns None as the "anti-csrftoken-a2z" header
+            # value, crashing aiohttp's Cython header writer.
+            if not await ensure_csrf_valid(login_obj, "last_called update"):
+                return
             try:
                 async with async_timeout.timeout(10):
                     last_called = await AlexaAPI.get_last_device_serial(login_obj)
@@ -1331,6 +1315,10 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     get_recent = getattr(
                         AlexaAPI, "get_last_device_serial_recent", None
                     )
+                    if not await ensure_csrf_valid(
+                        login_obj, "last_called probe"
+                    ):
+                        return
                     try:
                         if callable(get_recent):
                             last = await get_recent(

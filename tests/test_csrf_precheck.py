@@ -3,35 +3,121 @@
 These tests cover the fix for the aiohttp header serialization error:
     TypeError: Cannot serialize non-str key None
 
-The root cause is that alexapy passes login.csrf_token as the
-"anti-csrftoken-a2z" HTTP header value.  When csrf_token is None,
-aiohttp's Cython HTTP writer rejects the non-string value with the
-TypeError above.  The integration now pre-checks the token before
-calling AlexaAPI methods that rely on it and either refreshes it or
-skips the call entirely.
+Root cause
+----------
+alexapy's ``get_customer_history_records`` refreshes the CSRF token when it is
+``None`` **or** older than 24 hours.  When the refresh fails (the Amazon page
+does not return a ``<meta name="csrf-token">`` tag), ``get_csrf_token()``
+returns ``None`` and alexapy assigns that ``None`` as the
+``anti-csrftoken-a2z`` HTTP header *value*.  aiohttp's Cython HTTP header
+writer (``_http_writer.pyx``) then raises::
+
+    TypeError: Cannot serialize non-str key None
+
+(The error text is misleading — it fires for non-str *values* too.)
+
+The integration guards against this by calling ``ensure_csrf_valid()`` before
+every alexapy API call that needs a CSRF token.  ``ensure_csrf_valid`` checks
+both the *presence* and the *age* of the token, matching the same thresholds
+that alexapy uses internally.
 """
 
+import importlib
+import sys
+import time
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 # ---------------------------------------------------------------------------
-# Minimal stub helpers so we can exercise the CSRF pre-check logic without
-# importing homeassistant or the full integration.
+# Bootstrap: import helpers.py directly, avoiding the full package __init__.py
+# which pulls in homeassistant and other heavy deps not available in CI.
 # ---------------------------------------------------------------------------
 
+# Provide stubs for the modules that helpers.py imports at the top level.
+_stubs: dict[str, ModuleType] = {}
+for _mod_name in (
+    "homeassistant",
+    "homeassistant.const",
+    "homeassistant.core",
+    "homeassistant.exceptions",
+    "homeassistant.helpers",
+    "homeassistant.helpers.entity",
+    "homeassistant.helpers.instance_id",
+):
+    stub = ModuleType(_mod_name)
+    # helpers.py uses: CONF_EMAIL, CONF_URL, HomeAssistant, ConditionErrorMessage, Entity, async_get
+    stub.CONF_EMAIL = "email"
+    stub.CONF_URL = "url"
+    stub.HomeAssistant = type("HomeAssistant", (), {})
+    stub.ConditionErrorMessage = type("ConditionErrorMessage", (Exception,), {"message": ""})
+    stub.Entity = type("Entity", (), {})
+    stub.async_get = AsyncMock()
+    stub.async_get_instance_id = AsyncMock()
+    _stubs[_mod_name] = stub
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = stub
 
-def _make_login_obj(csrf_token=None, csrf_after_refresh=None):
+# dictor
+if "dictor" not in sys.modules:
+    dictor_stub = ModuleType("dictor")
+    dictor_stub.dictor = lambda *a, **kw: None
+    sys.modules["dictor"] = dictor_stub
+
+# Ensure the custom_components.alexa_media package namespace exists without
+# importing its __init__.py (which has heavy dependencies).
+for _ns in ("custom_components", "custom_components.alexa_media"):
+    if _ns not in sys.modules:
+        ns_mod = ModuleType(_ns)
+        ns_mod.__path__ = []  # mark as package
+        sys.modules[_ns] = ns_mod
+
+# Provide .const stub
+const_stub = ModuleType("custom_components.alexa_media.const")
+const_stub.DATA_ALEXAMEDIA = "alexa_media"
+const_stub.EXCEPTION_TEMPLATE = "An exception of type {} occurred. Arguments:\n{}"
+sys.modules["custom_components.alexa_media.const"] = const_stub
+
+# Now import the actual helpers module
+spec = importlib.util.spec_from_file_location(
+    "custom_components.alexa_media.helpers",
+    "custom_components/alexa_media/helpers.py",
+)
+helpers_mod = importlib.util.module_from_spec(spec)
+sys.modules["custom_components.alexa_media.helpers"] = helpers_mod
+spec.loader.exec_module(helpers_mod)
+
+CSRF_MAX_AGE = helpers_mod.CSRF_MAX_AGE
+_csrf_needs_refresh = helpers_mod._csrf_needs_refresh
+ensure_csrf_valid = helpers_mod.ensure_csrf_valid
+
+# ---------------------------------------------------------------------------
+# Stub helpers
+# ---------------------------------------------------------------------------
+
+_TEST_TOKEN = "test-csrf-value"  # nosec B105
+
+
+def _make_login_obj(
+    csrf_token=None,
+    csrf_token_created_at=None,
+    csrf_after_refresh=None,
+    created_at_after_refresh=None,
+):
     """Return a lightweight mock that behaves like AlexaLogin.
 
     Args:
         csrf_token: initial value of csrf_token.
+        csrf_token_created_at: initial creation timestamp (epoch seconds).
         csrf_after_refresh: value csrf_token should have **after**
-            get_csrf_token() is awaited.  If this is an Exception
-            *class* or *instance*, get_csrf_token() will raise it.
+            get_csrf_token() is awaited.  If an Exception, it will be raised.
+        created_at_after_refresh: value of csrf_token_created_at after refresh.
     """
     login = MagicMock()
     login.csrf_token = csrf_token
+    login.csrf_token_created_at = csrf_token_created_at
+    login.email = "test@example.com"
 
     async def _refresh():
         if isinstance(csrf_after_refresh, BaseException):
@@ -41,276 +127,165 @@ def _make_login_obj(csrf_token=None, csrf_after_refresh=None):
         ):
             raise csrf_after_refresh()
         login.csrf_token = csrf_after_refresh
+        login.csrf_token_created_at = created_at_after_refresh
 
     login.get_csrf_token = AsyncMock(side_effect=_refresh)
     return login
 
 
-_TEST_TOKEN = "test-csrf-value"  # nosec B105
-
-
 # ===================================================================
-# Tests for update_last_called CSRF pre-check  (__init__.py)
+# Unit tests for _csrf_needs_refresh
 # ===================================================================
 
 
-class TestUpdateLastCalledCsrfPrecheck:
-    """Test the CSRF pre-check in update_last_called."""
+class TestCsrfNeedsRefresh:
+    """Direct tests for the _csrf_needs_refresh predicate."""
 
-    # -- helper that replicates **only** the CSRF pre-check + API-call
-    #    portion of update_last_called (lines 826-859 of __init__.py) ---
-
-    @staticmethod
-    async def _run_update_last_called(login_obj, email="test@example.com"):
-        """Replicate the CSRF pre-check and API call in update_last_called.
-
-        Returns a dict with:
-            skipped  - True if the function returned before the API call
-            api_called - True if AlexaAPI.get_last_device_serial was invoked
-            last_called - the value returned by the (mocked) API, or None
-        """
-        result = {"skipped": False, "api_called": False, "last_called": None}
-        last_called = None  # simulate: no prior value
-
-        # -- Begin code-under-test (mirrors __init__.py:826-859) -------
-        if not last_called or not (last_called and last_called.get("summary")):
-            # CSRF pre-check
-            if login_obj.csrf_token is None:
-                try:
-                    await login_obj.get_csrf_token()
-                except Exception:  # pylint: disable=broad-except
-                    result["skipped"] = True
-                    return result
-                if login_obj.csrf_token is None:
-                    result["skipped"] = True
-                    return result
-
-            # Simulate the API call (we mock it below)
-            try:
-                last_called = await login_obj._api_get_last_device_serial()
-                result["api_called"] = True
-                result["last_called"] = last_called
-            except TypeError:
-                result["skipped"] = True
-                return result
-        # -- End code-under-test ----------------------------------------
-
-        return result
-
-    # 1) csrf_token is already valid -> API call proceeds
-    @pytest.mark.asyncio
-    async def test_csrf_token_valid_calls_api(self):
-        """When csrf_token is not None, the API call should proceed."""
-        login = _make_login_obj(csrf_token=_TEST_TOKEN)
-        login._api_get_last_device_serial = AsyncMock(
-            return_value={"serialNumber": "ABC", "timestamp": 123}
-        )
-
-        result = await self._run_update_last_called(login)
-
-        assert result["api_called"] is True
-        assert result["skipped"] is False
-        login.get_csrf_token.assert_not_awaited()
-
-    # 2) csrf_token is None -> refresh succeeds -> API call proceeds
-    @pytest.mark.asyncio
-    async def test_csrf_none_refresh_succeeds_calls_api(self):
-        """When csrf_token is None but refresh succeeds, the API should be called."""
-        login = _make_login_obj(csrf_token=None, csrf_after_refresh="refreshed-token")
-        login._api_get_last_device_serial = AsyncMock(
-            return_value={"serialNumber": "ABC", "timestamp": 123}
-        )
-
-        result = await self._run_update_last_called(login)
-
-        assert result["api_called"] is True
-        assert result["skipped"] is False
-        login.get_csrf_token.assert_awaited_once()
-
-    # 3) csrf_token is None -> refresh raises Exception -> skip
-    @pytest.mark.asyncio
-    async def test_csrf_none_refresh_raises_skips(self):
-        """When csrf_token is None and refresh raises, the call should be skipped."""
-        login = _make_login_obj(
-            csrf_token=None, csrf_after_refresh=RuntimeError("network error")
-        )
-        login._api_get_last_device_serial = AsyncMock()
-
-        result = await self._run_update_last_called(login)
-
-        assert result["skipped"] is True
-        assert result["api_called"] is False
-        login.get_csrf_token.assert_awaited_once()
-        login._api_get_last_device_serial.assert_not_awaited()
-
-    # 4) csrf_token is None -> refresh completes but token still None -> skip
-    @pytest.mark.asyncio
-    async def test_csrf_none_refresh_still_none_skips(self):
-        """When refresh completes but token remains None, the call should be skipped."""
-        login = _make_login_obj(csrf_token=None, csrf_after_refresh=None)
-        login._api_get_last_device_serial = AsyncMock()
-
-        result = await self._run_update_last_called(login)
-
-        assert result["skipped"] is True
-        assert result["api_called"] is False
-        login.get_csrf_token.assert_awaited_once()
-        login._api_get_last_device_serial.assert_not_awaited()
-
-    # 5) csrf_token is valid but API raises TypeError -> handled gracefully
-    @pytest.mark.asyncio
-    async def test_csrf_valid_api_raises_typeerror(self):
-        """When csrf_token is valid but the API raises TypeError, it is caught."""
-        login = _make_login_obj(csrf_token=_TEST_TOKEN)
-        login._api_get_last_device_serial = AsyncMock(
-            side_effect=TypeError("Cannot serialize non-str key None")
-        )
-
-        result = await self._run_update_last_called(login)
-
-        assert result["skipped"] is True
-        assert result["api_called"] is False
-
-    # 6) last_called already has a summary -> pre-check and API call skipped
-    @pytest.mark.asyncio
-    async def test_last_called_with_summary_skips_everything(self):
-        """When last_called already has a summary, no API call or CSRF check needed."""
+    def test_token_none(self):
         login = _make_login_obj(csrf_token=None)
-        login._api_get_last_device_serial = AsyncMock()
+        assert _csrf_needs_refresh(login) is True
 
-        # Directly test the outer condition
-        last_called = {"summary": "Turn on the lights", "serialNumber": "ABC"}
-        if not last_called or not (last_called and last_called.get("summary")):
-            pytest.fail("Should not enter the branch when summary is present")
+    def test_token_present_created_at_none(self):
+        login = _make_login_obj(csrf_token=_TEST_TOKEN, csrf_token_created_at=None)
+        assert _csrf_needs_refresh(login) is True
 
-        # Verify: the condition is False, so no refresh or API call
-        login.get_csrf_token.assert_not_awaited()
-        login._api_get_last_device_serial.assert_not_awaited()
-
-
-# ===================================================================
-# Tests for _collect_history_for_account CSRF pre-check  (services.py)
-# ===================================================================
-
-
-class TestCollectHistoryCsrfPrecheck:
-    """Test the CSRF pre-check in _collect_history_for_account."""
-
-    @staticmethod
-    async def _run_collect_history(login_obj):
-        """Replicate the CSRF pre-check from _collect_history_for_account.
-
-        Returns a dict with:
-            skipped    - True if the function returned before the API call
-            api_called - True if get_customer_history_records was invoked
-            records    - the data returned by the mock, or None
-        """
-        result = {"skipped": False, "api_called": False, "records": None}
-
-        # -- Begin code-under-test (mirrors services.py:292-319) -------
-        if login_obj.csrf_token is None:
-            try:
-                await login_obj.get_csrf_token()
-            except Exception:  # pylint: disable=broad-except
-                result["skipped"] = True
-                return result
-            if login_obj.csrf_token is None:
-                result["skipped"] = True
-                return result
-
-        history_data = await login_obj._api_get_customer_history_records()
-        result["api_called"] = True
-        if not history_data:
-            return result
-
-        result["records"] = history_data
-        # -- End code-under-test ----------------------------------------
-
-        return result
-
-    # 1) csrf_token valid -> API proceeds
-    @pytest.mark.asyncio
-    async def test_csrf_token_valid_calls_api(self):
-        """When csrf_token is not None, the history API should be called."""
-        login = _make_login_obj(csrf_token=_TEST_TOKEN)
-        login._api_get_customer_history_records = AsyncMock(
-            return_value=[{"description": {"summary": "hello"}}]
-        )
-
-        result = await self._run_collect_history(login)
-
-        assert result["api_called"] is True
-        assert result["skipped"] is False
-        assert result["records"] is not None
-        login.get_csrf_token.assert_not_awaited()
-
-    # 2) csrf_token None -> refresh succeeds -> API proceeds
-    @pytest.mark.asyncio
-    async def test_csrf_none_refresh_succeeds_calls_api(self):
-        """When csrf_token is None but refresh works, the API should be called."""
-        login = _make_login_obj(csrf_token=None, csrf_after_refresh="refreshed-token")
-        login._api_get_customer_history_records = AsyncMock(
-            return_value=[{"description": {"summary": "hello"}}]
-        )
-
-        result = await self._run_collect_history(login)
-
-        assert result["api_called"] is True
-        assert result["skipped"] is False
-        login.get_csrf_token.assert_awaited_once()
-
-    # 3) csrf_token None -> refresh raises -> skip
-    @pytest.mark.asyncio
-    async def test_csrf_none_refresh_raises_skips(self):
-        """When refresh raises an exception, the history call should be skipped."""
+    def test_token_fresh(self):
         login = _make_login_obj(
-            csrf_token=None, csrf_after_refresh=RuntimeError("fail")
+            csrf_token=_TEST_TOKEN, csrf_token_created_at=int(time.time())
         )
-        login._api_get_customer_history_records = AsyncMock()
+        assert _csrf_needs_refresh(login) is False
 
-        result = await self._run_collect_history(login)
+    def test_token_expired(self):
+        login = _make_login_obj(
+            csrf_token=_TEST_TOKEN,
+            csrf_token_created_at=int(time.time()) - CSRF_MAX_AGE - 1,
+        )
+        assert _csrf_needs_refresh(login) is True
 
-        assert result["skipped"] is True
-        assert result["api_called"] is False
-        login.get_csrf_token.assert_awaited_once()
-        login._api_get_customer_history_records.assert_not_awaited()
+    def test_token_just_within_limit(self):
+        login = _make_login_obj(
+            csrf_token=_TEST_TOKEN,
+            csrf_token_created_at=int(time.time()) - CSRF_MAX_AGE + 60,
+        )
+        assert _csrf_needs_refresh(login) is False
 
-    # 4) csrf_token None -> refresh ok but still None -> skip
+    def test_missing_created_at_attribute(self):
+        """If AlexaLogin lacks csrf_token_created_at entirely, treat as stale."""
+        login = MagicMock(spec=[])
+        login.csrf_token = _TEST_TOKEN
+        # no csrf_token_created_at attribute at all
+        assert _csrf_needs_refresh(login) is True
+
+
+# ===================================================================
+# Unit tests for ensure_csrf_valid
+# ===================================================================
+
+
+class TestEnsureCsrfValid:
+    """Test the ensure_csrf_valid async helper."""
+
     @pytest.mark.asyncio
-    async def test_csrf_none_refresh_still_none_skips(self):
-        """When refresh completes but token remains None, the call should be skipped."""
-        login = _make_login_obj(csrf_token=None, csrf_after_refresh=None)
-        login._api_get_customer_history_records = AsyncMock()
-
-        result = await self._run_collect_history(login)
-
-        assert result["skipped"] is True
-        assert result["api_called"] is False
-        login.get_csrf_token.assert_awaited_once()
-        login._api_get_customer_history_records.assert_not_awaited()
-
-    # 5) csrf_token valid but API returns empty -> api_called True, records None
-    @pytest.mark.asyncio
-    async def test_csrf_valid_api_returns_empty(self):
-        """When the API returns empty data, api_called is True but records is None."""
-        login = _make_login_obj(csrf_token=_TEST_TOKEN)
-        login._api_get_customer_history_records = AsyncMock(return_value=[])
-
-        result = await self._run_collect_history(login)
-
-        assert result["api_called"] is True
-        assert result["records"] is None
+    async def test_fresh_token_no_refresh(self):
+        """A fresh token needs no refresh."""
+        now = int(time.time())
+        login = _make_login_obj(csrf_token=_TEST_TOKEN, csrf_token_created_at=now)
+        result = await ensure_csrf_valid(login, "test")
+        assert result is True
         login.get_csrf_token.assert_not_awaited()
 
-    # 6) csrf_token valid but API returns None -> api_called True, records None
     @pytest.mark.asyncio
-    async def test_csrf_valid_api_returns_none(self):
-        """When the API returns None, api_called is True but records is None."""
-        login = _make_login_obj(csrf_token=_TEST_TOKEN)
-        login._api_get_customer_history_records = AsyncMock(return_value=None)
+    async def test_none_token_refresh_succeeds(self):
+        """None token, refresh succeeds -> True."""
+        now = int(time.time())
+        login = _make_login_obj(
+            csrf_token=None,
+            csrf_after_refresh=_TEST_TOKEN,
+            created_at_after_refresh=now,
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is True
+        login.get_csrf_token.assert_awaited_once()
 
-        result = await self._run_collect_history(login)
+    @pytest.mark.asyncio
+    async def test_none_token_refresh_fails(self):
+        """None token, refresh returns None -> False."""
+        login = _make_login_obj(
+            csrf_token=None,
+            csrf_after_refresh=None,
+            created_at_after_refresh=None,
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is False
+        login.get_csrf_token.assert_awaited_once()
 
-        assert result["api_called"] is True
-        assert result["records"] is None
-        login.get_csrf_token.assert_not_awaited()
+    @pytest.mark.asyncio
+    async def test_none_token_refresh_raises(self):
+        """None token, refresh raises -> False."""
+        login = _make_login_obj(
+            csrf_token=None,
+            csrf_after_refresh=RuntimeError("network error"),
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is False
+        login.get_csrf_token.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refresh_succeeds(self):
+        """Expired token (>24 h), refresh succeeds -> True."""
+        now = int(time.time())
+        login = _make_login_obj(
+            csrf_token="old-token",
+            csrf_token_created_at=now - CSRF_MAX_AGE - 1,
+            csrf_after_refresh="new-token",
+            created_at_after_refresh=now,
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is True
+        login.get_csrf_token.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refresh_fails(self):
+        """Expired token (>24 h), refresh returns None -> False.
+
+        This is the exact scenario that caused the original TypeError:
+        alexapy would try to refresh internally, get None, and assign
+        it as the header value.
+        """
+        now = int(time.time())
+        login = _make_login_obj(
+            csrf_token="old-token",
+            csrf_token_created_at=now - CSRF_MAX_AGE - 1,
+            csrf_after_refresh=None,
+            created_at_after_refresh=None,
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is False
+        login.get_csrf_token.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refresh_raises(self):
+        """Expired token, refresh raises -> False."""
+        now = int(time.time())
+        login = _make_login_obj(
+            csrf_token="old-token",
+            csrf_token_created_at=now - CSRF_MAX_AGE - 1,
+            csrf_after_refresh=RuntimeError("fail"),
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is False
+        login.get_csrf_token.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_expired_token_refresh_succeeds_but_no_created_at(self):
+        """Refresh sets token but not created_at -> still invalid."""
+        now = int(time.time())
+        login = _make_login_obj(
+            csrf_token="old-token",
+            csrf_token_created_at=now - CSRF_MAX_AGE - 1,
+            csrf_after_refresh="new-token",
+            created_at_after_refresh=None,  # created_at not updated
+        )
+        result = await ensure_csrf_valid(login, "test")
+        assert result is False
+        login.get_csrf_token.assert_awaited_once()

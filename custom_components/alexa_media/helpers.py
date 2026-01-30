@@ -11,6 +11,7 @@ import asyncio
 import functools
 import hashlib
 import logging
+import time
 from typing import Any, Callable, Optional, TypeVar, overload
 
 from alexapy import AlexapyLoginCloseRequested, AlexapyLoginError, hide_email
@@ -27,6 +28,68 @@ from .const import DATA_ALEXAMEDIA, EXCEPTION_TEMPLATE
 
 _LOGGER = logging.getLogger(__name__)
 ArgType = TypeVar("ArgType")
+
+# alexapy refreshes the CSRF token inside get_customer_history_records when
+# the token is None *or* older than 24 h.  If the refresh fails (the Amazon
+# page does not contain a <meta name="csrf-token"> tag), alexapy assigns the
+# None return value of get_csrf_token() as the "anti-csrftoken-a2z" HTTP
+# header value.  aiohttp's Cython header writer then raises
+#     TypeError: Cannot serialize non-str key None
+# (the error text is misleading – it fires for non-str header *values* too).
+#
+# CSRF_MAX_AGE mirrors the 24-hour threshold used in alexapy so the
+# integration can pre-empt the internal refresh and skip the call entirely
+# when a valid token cannot be obtained.
+CSRF_MAX_AGE: int = 60 * 60 * 24  # 24 h – same as alexapy
+
+
+def _csrf_needs_refresh(login_obj: AlexaLogin) -> bool:
+    """Return True when the CSRF token is missing or expired.
+
+    Mirrors the condition in alexapy/alexaapi.py get_customer_history_records
+    to avoid triggering an internal refresh that can leave a None header value.
+    """
+    if login_obj.csrf_token is None:
+        return True
+    created = getattr(login_obj, "csrf_token_created_at", None)
+    if created is None:
+        return True
+    return int(time.time()) - created > CSRF_MAX_AGE
+
+
+async def ensure_csrf_valid(login_obj: AlexaLogin, context: str = "") -> bool:
+    """Ensure the login object has a valid, non-expired CSRF token.
+
+    Attempts a single refresh when the token is missing or expired.
+    Returns True if a usable token is available, False otherwise.
+    """
+    if not _csrf_needs_refresh(login_obj):
+        return True
+
+    _LOGGER.debug(
+        "%s: CSRF token missing or expired, refreshing before %s",
+        hide_email(login_obj.email),
+        context or "API call",
+    )
+    try:
+        await login_obj.get_csrf_token()
+    except Exception:  # pylint: disable=broad-except
+        _LOGGER.debug(
+            "%s: Failed to refresh CSRF token, skipping %s",
+            hide_email(login_obj.email),
+            context or "API call",
+        )
+        return False
+
+    if _csrf_needs_refresh(login_obj):
+        _LOGGER.debug(
+            "%s: CSRF token still invalid after refresh, skipping %s",
+            hide_email(login_obj.email),
+            context or "API call",
+        )
+        return False
+
+    return True
 
 
 async def add_devices(
