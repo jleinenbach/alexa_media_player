@@ -824,6 +824,29 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
         to notify listeners.
         """
         if not last_called or not (last_called and last_called.get("summary")):
+            # Ensure CSRF token is available; a None token causes a
+            # TypeError inside aiohttp's header writer when alexapy
+            # passes it as the "anti-csrftoken-a2z" header value.
+            if login_obj.csrf_token is None:
+                _LOGGER.debug(
+                    "%s: CSRF token unavailable, refreshing before last_called update",
+                    hide_email(email),
+                )
+                try:
+                    await login_obj.get_csrf_token()
+                except Exception:  # pylint: disable=broad-except
+                    _LOGGER.debug(
+                        "%s: Failed to refresh CSRF token, skipping last_called update",
+                        hide_email(email),
+                    )
+                    return
+                if login_obj.csrf_token is None:
+                    _LOGGER.debug(
+                        "%s: CSRF token still unavailable after refresh, "
+                        "skipping last_called update",
+                        hide_email(email),
+                    )
+                    return
             try:
                 async with async_timeout.timeout(10):
                     last_called = await AlexaAPI.get_last_device_serial(login_obj)
