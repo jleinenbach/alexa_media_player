@@ -280,7 +280,7 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
         self._player_info = None
         self._waiting_media_id = None
         # Last Device
-        self._last_called = None
+        self._last_called = False
         self._last_called_timestamp = None
         self._last_called_summary = None
         # Do not Disturb state
@@ -768,15 +768,16 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                 self._connected_bluetooth = self._get_connected_bluetooth()
                 self._bluetooth_list = self._get_bluetooth_list()
             new_last_called = self._get_last_called()
-            if new_last_called and self._last_called != new_last_called:
+            if self._last_called != new_last_called:
                 self._last_called = new_last_called
-                self._last_called_timestamp = self.hass.data[DATA_ALEXAMEDIA][
-                    "accounts"
-                ][self._login.email]["last_called"]["timestamp"]
-                self._last_called_summary = self.hass.data[DATA_ALEXAMEDIA]["accounts"][
-                    self._login.email
-                ]["last_called"].get("summary")
-                await self._update_notify_targets()
+                if new_last_called:
+                    self._last_called_timestamp = self.hass.data[DATA_ALEXAMEDIA][
+                        "accounts"
+                    ][self._login.email]["last_called"]["timestamp"]
+                    self._last_called_summary = self.hass.data[DATA_ALEXAMEDIA][
+                        "accounts"
+                    ][self._login.email]["last_called"].get("summary")
+                    await self._update_notify_targets()
             if skip_api and self.hass:
                 self.schedule_update_ha_state()
                 return
