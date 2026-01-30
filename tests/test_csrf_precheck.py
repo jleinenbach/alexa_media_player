@@ -33,10 +33,32 @@ import pytest
 # ---------------------------------------------------------------------------
 # Bootstrap: import helpers.py directly, avoiding the full package __init__.py
 # which pulls in homeassistant and other heavy deps not available in CI.
+#
+# IMPORTANT: all stubs are temporary – we snapshot sys.modules before adding
+# them and restore the original state afterwards so that later test files
+# (test_diagnostics, test_sensor, test_switch …) can still import the *real*
+# modules when running in an environment where they are installed.
 # ---------------------------------------------------------------------------
 
-# Provide stubs for the modules that helpers.py imports at the top level.
-_stubs: dict[str, ModuleType] = {}
+_ALL_STUBS = [
+    "homeassistant",
+    "homeassistant.const",
+    "homeassistant.core",
+    "homeassistant.exceptions",
+    "homeassistant.helpers",
+    "homeassistant.helpers.entity",
+    "homeassistant.helpers.instance_id",
+    "dictor",
+    "custom_components",
+    "custom_components.alexa_media",
+    "custom_components.alexa_media.const",
+    "custom_components.alexa_media.helpers",
+]
+
+# 1. Snapshot current sys.modules for every key we might touch.
+_saved: dict[str, ModuleType | None] = {k: sys.modules.get(k) for k in _ALL_STUBS}
+
+# 2. Add lightweight stubs (only where the real module isn't already loaded).
 for _mod_name in (
     "homeassistant",
     "homeassistant.const",
@@ -46,40 +68,39 @@ for _mod_name in (
     "homeassistant.helpers.entity",
     "homeassistant.helpers.instance_id",
 ):
-    stub = ModuleType(_mod_name)
-    # helpers.py uses: CONF_EMAIL, CONF_URL, HomeAssistant, ConditionErrorMessage, Entity, async_get
-    stub.CONF_EMAIL = "email"
-    stub.CONF_URL = "url"
-    stub.HomeAssistant = type("HomeAssistant", (), {})
-    stub.ConditionErrorMessage = type("ConditionErrorMessage", (Exception,), {"message": ""})
-    stub.Entity = type("Entity", (), {})
-    stub.async_get = AsyncMock()
-    stub.async_get_instance_id = AsyncMock()
-    _stubs[_mod_name] = stub
     if _mod_name not in sys.modules:
+        stub = ModuleType(_mod_name)
+        stub.CONF_EMAIL = "email"
+        stub.CONF_URL = "url"
+        stub.HomeAssistant = type("HomeAssistant", (), {})
+        stub.ConditionErrorMessage = type(
+            "ConditionErrorMessage", (Exception,), {"message": ""}
+        )
+        stub.Entity = type("Entity", (), {})
+        stub.async_get = AsyncMock()
+        stub.async_get_instance_id = AsyncMock()
         sys.modules[_mod_name] = stub
 
-# dictor
 if "dictor" not in sys.modules:
     dictor_stub = ModuleType("dictor")
     dictor_stub.dictor = lambda *a, **kw: None
     sys.modules["dictor"] = dictor_stub
 
-# Ensure the custom_components.alexa_media package namespace exists without
-# importing its __init__.py (which has heavy dependencies).
 for _ns in ("custom_components", "custom_components.alexa_media"):
     if _ns not in sys.modules:
         ns_mod = ModuleType(_ns)
         ns_mod.__path__ = []  # mark as package
         sys.modules[_ns] = ns_mod
 
-# Provide .const stub
-const_stub = ModuleType("custom_components.alexa_media.const")
-const_stub.DATA_ALEXAMEDIA = "alexa_media"
-const_stub.EXCEPTION_TEMPLATE = "An exception of type {} occurred. Arguments:\n{}"
-sys.modules["custom_components.alexa_media.const"] = const_stub
+if "custom_components.alexa_media.const" not in sys.modules:
+    const_stub = ModuleType("custom_components.alexa_media.const")
+    const_stub.DATA_ALEXAMEDIA = "alexa_media"
+    const_stub.EXCEPTION_TEMPLATE = (
+        "An exception of type {} occurred. Arguments:\n{}"
+    )
+    sys.modules["custom_components.alexa_media.const"] = const_stub
 
-# Now import the actual helpers module
+# 3. Import the actual helpers module.
 spec = importlib.util.spec_from_file_location(
     "custom_components.alexa_media.helpers",
     "custom_components/alexa_media/helpers.py",
@@ -88,9 +109,18 @@ helpers_mod = importlib.util.module_from_spec(spec)
 sys.modules["custom_components.alexa_media.helpers"] = helpers_mod
 spec.loader.exec_module(helpers_mod)
 
+# Grab the symbols we need before restoring sys.modules.
 CSRF_MAX_AGE = helpers_mod.CSRF_MAX_AGE
 _csrf_needs_refresh = helpers_mod._csrf_needs_refresh
 ensure_csrf_valid = helpers_mod.ensure_csrf_valid
+
+# 4. Restore sys.modules to its pre-bootstrap state so other test files
+#    that rely on the *real* packages are not affected.
+for _key in _ALL_STUBS:
+    if _saved[_key] is None:
+        sys.modules.pop(_key, None)
+    else:
+        sys.modules[_key] = _saved[_key]
 
 # ---------------------------------------------------------------------------
 # Stub helpers
