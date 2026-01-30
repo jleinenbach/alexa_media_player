@@ -145,6 +145,7 @@ class TestTriggerEvent:
         assert call_args[0][0] == "alexa_media_notification_event"
         assert call_args[1]["event_data"]["event"] == sensor._active[0]
 
+
 from custom_components.alexa_media.sensor import AlexaMediaNotificationSensor
 
 
