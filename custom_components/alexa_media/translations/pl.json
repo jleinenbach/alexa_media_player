@@ -1,7 +1,7 @@
 {
   "config": {
     "abort": {
-      "forgot_password": "Wykryto stronę Zapomniałem hasła. Zwykle jest to wynikiem również nieudanych prób logowania. Amazon może wymagać podjęcia działań przed próbą ponownego logowania.",
+      "forgot_password": "Wykryto stronę „Zapomniałem hasła”. Zwykle jest to spowodowane zbyt wieloma nieudanymi próbami logowania. Amazon może wymagać podjęcia działań, zanim będzie można ponownie spróbować zalogować się.",
       "login_failed": "Alexa Media Player nie może się zalogować.",
       "reauth_successful": "Odtwarzacz multimedialny Alexa pomyślnie przeszedł ponowne uwierzytelnienie. Proszę zignorować komunikat „Przerwano” od HA."
     },
@@ -19,7 +19,7 @@
     "step": {
       "proxy_warning": {
         "data": {
-          "proxy_warning": "Ignoruj i kontynuuj - Rozumiem, że nie jest zapewniane wsparcie w przypadku problemów z logowaniem przy pomijaniu tego ostrzeżenia."
+          "proxy_warning": "Ignoruj i kontynuuj – rozumiem, że nie jest zapewniane wsparcie dla problemów z logowaniem wynikających z obejścia tego ostrzeżenia."
         },
         "description": "Serwer HA nie może połączyć się z podanym adresem URL: {hass_url}.\n> {error}\n\nAby rozwiązać ten problem, upewnij się, że Twoja przeglądarka może uzyskać dostęp do adresu {hass_url}. To pole znajduje się w Ustawieniach > System > Sieć > Adres URL Asystenta Domowego.\n\nJeśli masz **pewność**, że Twoja przeglądarka może uzyskać dostęp do tego adresu URL, możesz pominąć to ostrzeżenie.",
         "title": "Alexa Media Player – nie można połączyć się z adresem URL HA"
@@ -39,16 +39,16 @@
           "extended_entity_discovery": "Dodaj dodatkowe czujniki, przełączniki i światła",
           "hass_url": "Lokalny adres URL sieciowy umożliwiający dostęp do Home Assistant",
           "include_devices": "Uwzględnij tylko te urządzenia (rozdzielone przecinkami)",
-          "otp_secret": "Klucz aplikacji Amazon 2SV Authenticator",
+          "otp_secret": "52-znakowy klucz aplikacji uwierzytelniającej dla Amazon 2SV",
           "password": "Hasło",
           "public_url": "Publiczny adres URL udostępniany zewnętrznym usługom hostowanym",
           "queue_delay": "Opóźnienie w kolejkowaniu wielu poleceń (sekundy)",
           "scan_interval": "Zaplanowany interwał sondowania (sekundy)",
-          "securitycode": "Has\u0142o jednorazowe (OTP)",
+          "securitycode": "Jednorazowe hasło (OTP)",
           "should_get_network": "Odkryj sieć Alexa",
           "url": "Region/domena Amazon (np. amazon.co.uk)"
         },
-        "description": "* Wymagane wpisy\nUwaga: **Rozszerzone wykrywanie jednostek** wymaga włączenia opcji **Odkryj sieć Alexa**.",
+        "description": "* Wymagane wpisy",
         "title": "Alexa Media Player — konfiguracja"
       }
     }
@@ -72,8 +72,8 @@
           "scan_interval": "Interwał skanowania (sekundy)",
           "should_get_network": "Odkryj sieć Alexa"
         },
-        "description": "* Wymagane wpisy \n Uwaga: **Rozszerzone wykrywanie jednostek** wymaga włączenia opcji **Odkryj sieć Alexa**.",
-        "title": "Alexa Media Player – Rekonfiguracja"
+        "description": "* Wymagane wpisy",
+        "title": "Odtwarzacz multimedialny Alexa – rekonfiguracja"
       }
     }
   },
