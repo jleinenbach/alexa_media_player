@@ -173,13 +173,15 @@ async def async_unload_entry(hass, entry) -> bool:
                 # Air_Quality stores sensors in a nested dict
                 for nested_key, nested_sensor in list(device.items()):
                     _LOGGER.debug("Removing %s", nested_sensor)
-                    await nested_sensor.async_remove()
+                    if hasattr(nested_sensor, "async_remove"):
+                        await nested_sensor.async_remove()
                     device.pop(nested_key, None)
                 sensors.pop(sensor_key, None)
                 continue
 
             _LOGGER.debug("Removing %s", device)
-            await device.async_remove()
+            if hasattr(device, "async_remove"):
+                await device.async_remove()
             sensors.pop(sensor_key, None)
 
         if not sensors:
@@ -683,6 +685,11 @@ class AlexaMediaNotificationSensor(SensorEntity):
                 )
 
     def _trigger_event(self, time_date) -> None:
+        if not self._active:
+            _LOGGER.debug(
+                "%s: Skipping event firing, no active notifications", self
+            )
+            return
         _LOGGER.debug(
             "%s:Firing %s at %s",
             self,
