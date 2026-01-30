@@ -38,7 +38,7 @@ ArgType = TypeVar("ArgType")
 # (the error text is misleading – it fires for non-str header *values* too).
 #
 # CSRF_MAX_AGE mirrors the 24-hour threshold used in alexapy so the
-# integration can pre-empt the internal refresh and skip the call entirely
+# integration can preempt the internal refresh and skip the call entirely
 # when a valid token cannot be obtained.
 CSRF_MAX_AGE: int = 60 * 60 * 24  # 24 h – same as alexapy
 

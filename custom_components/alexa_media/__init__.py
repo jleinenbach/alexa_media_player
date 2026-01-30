@@ -1315,9 +1315,7 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                     get_recent = getattr(
                         AlexaAPI, "get_last_device_serial_recent", None
                     )
-                    if not await ensure_csrf_valid(
-                        login_obj, "last_called probe"
-                    ):
+                    if not await ensure_csrf_valid(login_obj, "last_called probe"):
                         return
                     try:
                         if callable(get_recent):

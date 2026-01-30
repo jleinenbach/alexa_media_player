@@ -95,9 +95,7 @@ for _ns in ("custom_components", "custom_components.alexa_media"):
 if "custom_components.alexa_media.const" not in sys.modules:
     const_stub = ModuleType("custom_components.alexa_media.const")
     const_stub.DATA_ALEXAMEDIA = "alexa_media"
-    const_stub.EXCEPTION_TEMPLATE = (
-        "An exception of type {} occurred. Arguments:\n{}"
-    )
+    const_stub.EXCEPTION_TEMPLATE = "An exception of type {} occurred. Arguments:\n{}"
     sys.modules["custom_components.alexa_media.const"] = const_stub
 
 # 3. Import the actual helpers module.
@@ -264,7 +262,7 @@ class TestEnsureCsrfValid:
     async def test_expired_token_refresh_succeeds(self):
         """Expired token (>24 h), refresh succeeds -> True."""
         now = int(time.time())
-        login = _make_login_obj(
+        login = _make_login_obj(  # nosec B106
             csrf_token="old-token",
             csrf_token_created_at=now - CSRF_MAX_AGE - 1,
             csrf_after_refresh="new-token",
@@ -283,7 +281,7 @@ class TestEnsureCsrfValid:
         it as the header value.
         """
         now = int(time.time())
-        login = _make_login_obj(
+        login = _make_login_obj(  # nosec B106
             csrf_token="old-token",
             csrf_token_created_at=now - CSRF_MAX_AGE - 1,
             csrf_after_refresh=None,
@@ -297,7 +295,7 @@ class TestEnsureCsrfValid:
     async def test_expired_token_refresh_raises(self):
         """Expired token, refresh raises -> False."""
         now = int(time.time())
-        login = _make_login_obj(
+        login = _make_login_obj(  # nosec B106
             csrf_token="old-token",
             csrf_token_created_at=now - CSRF_MAX_AGE - 1,
             csrf_after_refresh=RuntimeError("fail"),
@@ -310,7 +308,7 @@ class TestEnsureCsrfValid:
     async def test_expired_token_refresh_succeeds_but_no_created_at(self):
         """Refresh sets token but not created_at -> still invalid."""
         now = int(time.time())
-        login = _make_login_obj(
+        login = _make_login_obj(  # nosec B106
             csrf_token="old-token",
             csrf_token_created_at=now - CSRF_MAX_AGE - 1,
             csrf_after_refresh="new-token",
