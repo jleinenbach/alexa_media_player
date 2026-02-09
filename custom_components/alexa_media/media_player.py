@@ -911,11 +911,9 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                 ):
                     asyncio.gather(
                         *map(
-                            lambda x: (
-                                self.hass.data[DATA_ALEXAMEDIA]["accounts"][
-                                    self._login.email
-                                ]["entities"]["media_player"][x].async_update()
-                            ),
+                            lambda x: self.hass.data[DATA_ALEXAMEDIA]["accounts"][
+                                self._login.email
+                            ]["entities"]["media_player"][x].async_update(),
                             filter(
                                 lambda x: (
                                     self.hass.data[DATA_ALEXAMEDIA]["accounts"][
