@@ -26,10 +26,16 @@ from custom_components.alexa_media.diagnostics import (
 
 @pytest.fixture
 def mock_hass():
-    """Create a minimal hass-like object for unit tests."""
+    """Create a minimal hass-like object for unit tests.
+
+    HA >= 2026.2 requires the frame helper to be initialised before
+    DataUpdateCoordinator can be instantiated.  We patch report_usage
+    to a no-op so the coordinator can be created outside a real HA runtime.
+    """
     hass = MagicMock()
     hass.data = {}
-    return hass
+    with patch("homeassistant.helpers.frame.report_usage"):
+        yield hass
 
 
 @pytest.mark.parametrize(
@@ -85,7 +91,7 @@ def test_maybe_keys_sanitizes_email_keys_and_limits(monkeypatch):
 
     val = {
         "daniel@example.com": 1,
-        "some_token_value_abcdef": 2,
+        "some_token_value_abcdef": 2,  # nosec B105: Bandit hardcoded_password_string; dummy token string for unit test only
         "ok": 3,
     }
 
