@@ -207,11 +207,16 @@ class AlexaMediaServices:
                         hide_email(email),
                     )
                 finally:
-                    # Clean up task reference when done
-                    if email in self.hass.data[DATA_ALEXAMEDIA]["accounts"]:
-                        self.hass.data[DATA_ALEXAMEDIA]["accounts"][email].pop(
-                            "service_update_last_called_task", None
-                        )
+                    # Only clear the handle if it still points at THIS task. A
+                    # rapid second invocation may have cancelled us and stored a
+                    # replacement; do not drop the live replacement's handle.
+                    account = self.hass.data[DATA_ALEXAMEDIA]["accounts"].get(email)
+                    if (
+                        account is not None
+                        and account.get("service_update_last_called_task")
+                        is asyncio.current_task()
+                    ):
+                        account.pop("service_update_last_called_task", None)
 
             # Cancel any existing task for this account before creating a new one
             existing_task = account_dict.get("service_update_last_called_task")

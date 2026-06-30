@@ -758,7 +758,13 @@ def is_cap_state_still_acceptable(
 
     try:
         time_of_sample = datetime.fromisoformat(formatted_time_of_sample)
-    except ValueError:
+    except (ValueError, TypeError):
+        return False
+
+    if time_of_sample.tzinfo is None or time_of_sample.utcoffset() is None:
+        # Naive timestamp: the offset is unknown, so we cannot prove the sample
+        # is newer than the aware `since`. Treat it as unusable (mirrors the old
+        # %z parser, which rejected offset-less values).
         return False
 
     return time_of_sample >= since
