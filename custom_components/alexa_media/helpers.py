@@ -13,6 +13,7 @@ import hashlib
 import logging
 import time
 from typing import Any, Callable, Optional, TypeVar, overload
+from urllib.parse import urlparse
 
 from alexapy import AlexapyLoginCloseRequested, AlexapyLoginError, hide_email
 from alexapy.alexalogin import AlexaLogin
@@ -22,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConditionErrorMessage
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
+from homeassistant.util import slugify
 import wrapt
 
 from .const import DATA_ALEXAMEDIA, EXCEPTION_TEMPLATE
@@ -41,6 +43,17 @@ ArgType = TypeVar("ArgType")
 # integration can preempt the internal refresh and skip the call entirely
 # when a valid token cannot be obtained.
 CSRF_MAX_AGE: int = 60 * 60 * 24  # 24 h – same as alexapy
+
+
+def reauth_notification_id(email: str, url: str) -> str:
+    """Build the persistent-notification id for a reauth prompt.
+
+    Single source of truth shared by the create and dismiss sites so the id
+    cannot drift between them (a mismatch would leave the notification orphaned
+    on unload).
+    """
+    host = urlparse(url).hostname or url
+    return f"alexa_media_{slugify(email)}_{slugify(host)}"
 
 
 def _csrf_needs_refresh(login_obj: AlexaLogin) -> bool:

@@ -2045,8 +2045,37 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
             "sw_version": self._software_version,
         }
 
+    def _schedule_last_called_event(self) -> None:
+        """Schedule the alexa_media_last_called_event bus event.
+
+        Kept separate from notify-target refresh so the bus event is emitted
+        independent of notify readiness (see _update_notify_targets).
+        """
+
+        def _fire_last_called_event(_now) -> None:
+            """Fire after yielding once so entity/service state has settled."""
+            event_data = {
+                "last_called": self.device_serial_number,
+                "name": self._device_name,
+                "timestamp": self._last_called_timestamp,
+                "summary": self._last_called_summary,
+                "response": self._last_called_response,
+            }
+
+            _LOGGER.debug("Firing alexa_media_last_called_event")
+            self.hass.bus.fire("alexa_media_last_called_event", event_data)
+
+        _LOGGER.debug("Scheduling alexa_media_last_called_event")
+        # Defer to the next loop iteration so downstream consumers see updated state.
+        async_call_later(self.hass, 0, _fire_last_called_event)
+
     async def _update_notify_targets(self) -> None:
         """Update notification service targets."""
+        # Schedule the bus event before the notify-readiness guards so automations
+        # listening for alexa_media_last_called_event never miss updates that arrive
+        # in the startup/not-ready window. Only the notify target refresh below is
+        # conditional on notify readiness.
+        self._schedule_last_called_event()
         notify = self.hass.data[DATA_ALEXAMEDIA].get("notify_service")
         if not notify:
             return
@@ -2113,20 +2142,3 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                 )
             finally:
                 notify.last_called = previous_last_called
-
-        def _fire_last_called_event(_now) -> None:
-            """Fire after yielding once so entity/service state has settled."""
-            event_data = {
-                "last_called": self.device_serial_number,
-                "name": self._device_name,
-                "timestamp": self._last_called_timestamp,
-                "summary": self._last_called_summary,
-                "response": self._last_called_response,
-            }
-
-            _LOGGER.debug("Firing alexa_media_last_called_event")
-            self.hass.bus.fire("alexa_media_last_called_event", event_data)
-
-        _LOGGER.debug("Scheduling alexa_media_last_called_event")
-        # Defer to the next loop iteration so downstream consumers see updated state.
-        async_call_later(self.hass, 0, _fire_last_called_event)

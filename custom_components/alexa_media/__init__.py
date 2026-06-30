@@ -15,7 +15,6 @@ import os
 import random
 import time
 from typing import Optional
-from urllib.parse import urlparse
 
 import aiohttp
 from alexapy import (
@@ -108,6 +107,7 @@ from .helpers import (
     calculate_uuid,
     ensure_csrf_valid,
     hide_email,
+    reauth_notification_id,
     report_relogin_required,
     safe_get,
 )
@@ -3159,7 +3159,7 @@ async def async_unload_entry(hass, entry) -> bool:
     if hass.data[DATA_ALEXAMEDIA].get("config_flows") == {}:
         _LOGGER.debug("Removing config_flows data")
         async_dismiss_persistent_notification(
-            hass, f"alexa_media_{slugify(email)}{slugify((entry.data['url'])[7:])}"
+            hass, reauth_notification_id(email, entry.data["url"])
         )
         hass.data[DATA_ALEXAMEDIA].pop("config_flows")
     if not hass.data[DATA_ALEXAMEDIA]:
@@ -3280,12 +3280,11 @@ async def test_login_status(hass, config_entry, login) -> bool:
         elapsed_time: str = str(datetime.now() - login.stats.get("login_timestamp"))
         api_calls: int = login.stats.get("api_calls")
         message += f"Relogin required after {elapsed_time} and {api_calls} api calls."
-    host = urlparse(login.url).hostname or login.url
     async_create_persistent_notification(
         hass,
         title="Alexa Media Reauthentication Required",
         message=message,
-        notification_id=f"alexa_media_{slugify(login.email)}_{slugify(host)}",
+        notification_id=reauth_notification_id(login.email, login.url),
     )
     flow = hass.data[DATA_ALEXAMEDIA]["config_flows"].get(
         f"{account[CONF_EMAIL]} - {account[CONF_URL]}"

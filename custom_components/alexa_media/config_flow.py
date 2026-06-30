@@ -15,7 +15,6 @@ from functools import reduce
 import html as html_lib
 import logging
 from typing import Any, Optional
-from urllib.parse import urlparse
 
 from aiohttp import ClientConnectionError, ClientSession, InvalidURL, web, web_response
 from aiohttp.web_exceptions import HTTPBadRequest
@@ -45,7 +44,6 @@ from homeassistant.data_entry_flow import FlowResult, UnknownFlow
 from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers.httpx_client import create_async_httpx_client
 from homeassistant.helpers.network import NoURLAvailableError, get_url
-from homeassistant.util import slugify
 import httpx
 import voluptuous as vol
 from yarl import URL
@@ -77,7 +75,7 @@ from .const import (
     DOMAIN,
     ISSUE_URL,
 )
-from .helpers import calculate_uuid
+from .helpers import calculate_uuid, reauth_notification_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -690,8 +688,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                     "alexa_media_relogin_success",
                     event_data={"email": hide_email(email), "url": login.url},
                 )
-                host = urlparse(login.url).hostname or login.url
-                notification_id = f"alexa_media_{slugify(email)}_{slugify(host)}"
+                notification_id = reauth_notification_id(email, login.url)
                 async_dismiss_persistent_notification(
                     self.hass,
                     notification_id,
@@ -754,8 +751,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 )
         if login.status and (login.status.get("login_failed")):
             _LOGGER.debug("Login failed: %s", login.status.get("login_failed"))
-            host = urlparse(login.url).hostname or login.url
-            notification_id = f"alexa_media_{slugify(email)}_{slugify(host)}"
+            notification_id = reauth_notification_id(email, login.url)
             await login.close()
             async_dismiss_persistent_notification(
                 self.hass,
