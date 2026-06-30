@@ -283,20 +283,20 @@ tzdata = ">=2024.1"
 
 [[package]]
 name = "alexapy"
-version = "1.29.15"
+version = "1.29.24"
 description = "Python API to control Amazon Echo Devices Programmatically."
 optional = false
 python-versions = "<4,>=3.11"
 groups = ["main"]
 files = [
-    {file = "alexapy-1.29.15-py3-none-any.whl", hash = "sha256:5edb875c63a611d19ae0b5563ea72ee0c2ad97eb8b57bbcdc257c92be4729b7e"},
-    {file = "alexapy-1.29.15.tar.gz", hash = "sha256:1d41e3d2749e38a67826eca8b7b13de248c1dc109d2d48ca75461d1ecd20d59a"},
+    {file = "alexapy-1.29.24-py3-none-any.whl", hash = "sha256:899167fc22adba074dc916c02e1ddf05ac885997f240da49b935aa9c59201242"},
+    {file = "alexapy-1.29.24.tar.gz", hash = "sha256:3d616463e79c0ddae784fb0a15789a519408c03193999e5c97a275601fa8a15e"},
 ]
 
 [package.dependencies]
 aiofiles = ">=24.1.0,<25.0.0"
 aiohttp = ">=3.8.4,<4.0.0"
-authcaptureproxy = ">=1.3.2,<2.0.0"
+authcaptureproxy = ">=1.3.7,<2.0.0"
 backoff = ">=1.10"
 beautifulsoup4 = "*"
 certifi = "*"
@@ -507,23 +507,23 @@ files = [
 
 [[package]]
 name = "authcaptureproxy"
-version = "1.3.3"
+version = "1.3.7"
 description = "A Python project to create a proxy to capture authentication information from a webpage. This is useful to capture oauth login details without access to a third-party oauth."
 optional = false
-python-versions = "<4.0,>=3.10"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "authcaptureproxy-1.3.3-py3-none-any.whl", hash = "sha256:d95596a7e26e10fe4c23a0f0325ae37949bb0a1bd204bd7e5f9d0d95000607a4"},
-    {file = "authcaptureproxy-1.3.3.tar.gz", hash = "sha256:a8d3f536568aca26b7448b1d7b40e541d5ad195b067779bf1bc9956b5ef876f0"},
+    {file = "authcaptureproxy-1.3.7-py3-none-any.whl", hash = "sha256:a33a79dcf566cf129a10872e75f599c44936801f6ac33d2fb04807c517c3924f"},
+    {file = "authcaptureproxy-1.3.7.tar.gz", hash = "sha256:4a48c34ca70bff6cd489050dca6b4025a6c61576766308137879f525233245b2"},
 ]
 
 [package.dependencies]
-aiohttp = ">=3,<4"
-beautifulsoup4 = ">=4,<5"
+aiohttp = ">=3.0.0,<4.0.0"
+beautifulsoup4 = ">=4.0.0,<5.0.0"
 httpx = "*"
-multidict = ">=6,<7"
+multidict = ">=6.0.0,<7.0.0"
 typer = ">=0.3,<1.0"
-yarl = ">=1,<2"
+yarl = ">=1.0.0,<2.0.0"
 
 [[package]]
 name = "authlib"
@@ -5946,4 +5946,4 @@ ifaddr = ">=0.1.7"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "22f34f3f2df7ed2ec84b9e7055c9c43225b2b8bede782c350d792395377d5455"
+content-hash = "2199118a8ce43b4b12b531b7c144363f5872aab57483cf590f736eaf392e22f3"
