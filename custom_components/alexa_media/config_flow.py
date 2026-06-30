@@ -14,8 +14,8 @@ from datetime import timedelta
 from functools import reduce
 import html as html_lib
 import logging
-import traceback
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from aiohttp import ClientConnectionError, ClientSession, InvalidURL, web, web_response
 from aiohttp.web_exceptions import HTTPBadRequest
@@ -43,6 +43,7 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult, UnknownFlow
 from homeassistant.exceptions import Unauthorized
+from homeassistant.helpers.httpx_client import create_async_httpx_client
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.util import slugify
 import httpx
@@ -381,7 +382,10 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                     self.login,
                     str(URL(self.config.get(CONF_HASS_URL)).with_path(AUTH_PROXY_PATH)),
                 )
-                self.proxy.session_factory = lambda: httpx.AsyncClient(
+                self.proxy.session_factory = lambda: create_async_httpx_client(
+                    self.hass,
+                    verify_ssl=True,
+                    follow_redirects=False,
                     timeout=httpx.Timeout(
                         connect=30.0,
                         read=120.0,
@@ -405,13 +409,13 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 write=30.0,
                 pool=30.0,
             )
-            _LOGGER.warning(
-                "PROXY DEBUG >>> Session timeout set to: %s",
+            _LOGGER.debug(
+                "Proxy session timeout set to: %s",
                 self.proxy.session.timeout,
             )
         else:
             _LOGGER.warning(
-                "PROXY DEBUG >>> No session found on proxy object. Attrs: %s",
+                "Proxy: No session found on proxy object. Attrs: %s",
                 dir(self.proxy),
             )
         if not self.proxy_view:
@@ -686,9 +690,11 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                     "alexa_media_relogin_success",
                     event_data={"email": hide_email(email), "url": login.url},
                 )
+                host = urlparse(login.url).hostname or login.url
+                notification_id = f"alexa_media_{slugify(email)}_{slugify(host)}"
                 async_dismiss_persistent_notification(
                     self.hass,
-                    notification_id=f"alexa_media_{slugify(email)}{slugify(login.url[7:])}",
+                    notification_id,
                 )
                 if not self.hass.data[DATA_ALEXAMEDIA]["accounts"].get(
                     self.config[CONF_EMAIL]
@@ -748,10 +754,12 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 )
         if login.status and (login.status.get("login_failed")):
             _LOGGER.debug("Login failed: %s", login.status.get("login_failed"))
+            host = urlparse(login.url).hostname or login.url
+            notification_id = f"alexa_media_{slugify(email)}_{slugify(host)}"
             await login.close()
             async_dismiss_persistent_notification(
                 self.hass,
-                notification_id=f"alexa_media_{slugify(email)}{slugify(login.url[7:])}",
+                notification_id,
             )
             return self.async_abort(reason="login_failed")
         new_schema = self._update_schema_defaults()
@@ -1120,7 +1128,7 @@ class AlexaMediaAuthorizationProxyView(HomeAssistantView):
                     for k, v in request.headers.items()
                 }
                 _LOGGER.debug(
-                    "PROXY DEBUG >>> Request: %s %s | Remote: %s | Headers: %s",
+                    "Proxy request: %s %s | Remote: %s | Headers: %s",
                     request.method,
                     request.url,
                     request.remote,
@@ -1138,7 +1146,7 @@ class AlexaMediaAuthorizationProxyView(HomeAssistantView):
                         else "unknown"
                     )
                     _LOGGER.debug(
-                        "PROXY DEBUG >>> Success: %s %s | Status: %s | Response headers: %s",
+                        "Proxy response: %s %s | Status: %s | Response headers: %s",
                         request.method,
                         request.url,
                         result.status if hasattr(result, "status") else "unknown",
@@ -1156,17 +1164,13 @@ class AlexaMediaAuthorizationProxyView(HomeAssistantView):
             except web.HTTPException:
                 raise  # Let aiohttp handle redirects (HTTPFound) and other HTTP exceptions
             except Exception as ex:  # pylint: disable=broad-except
-                tb = traceback.format_exc()
                 _LOGGER.warning(
-                    "PROXY DEBUG >>> EXCEPTION at %s %s\n"
-                    "Type: %s\n"
-                    "Message: %s\n"
-                    "Full traceback:\n%s",
+                    "Proxy exception at %s %s: %s - %s",
                     request.method,
                     request.url,
                     type(ex).__name__,
                     ex,
-                    tb,
+                    exc_info=True,
                 )
                 return web_response.Response(
                     headers={"content-type": "text/html"},
