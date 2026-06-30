@@ -522,6 +522,11 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
                     self.schedule_update_ha_state()
                 _LOGGER.debug("[handle event] Updating notify targets")
                 await self._update_notify_targets()
+                # Emit the bus event only from the genuine last_called_change push,
+                # never from refresh()/startup (skip_api) which merely observes the
+                # stored value. Kept outside any notify-readiness guard so the event
+                # stays decoupled from notify readiness.
+                self._schedule_last_called_event()
             else:
                 self._last_called = False
             if self.hass and self.async_schedule_update_ha_state:
@@ -2048,8 +2053,10 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
     def _schedule_last_called_event(self) -> None:
         """Schedule the alexa_media_last_called_event bus event.
 
-        Kept separate from notify-target refresh so the bus event is emitted
-        independent of notify readiness (see _update_notify_targets).
+        Called only from the genuine last_called_change push path in
+        _handle_event, outside any notify-readiness guard, so the event is
+        emitted exactly once per real voice action and stays decoupled from
+        both notify readiness and refresh()/startup observation.
         """
 
         def _fire_last_called_event(_now) -> None:
@@ -2071,11 +2078,6 @@ class AlexaClient(MediaPlayerDevice, AlexaMedia):
 
     async def _update_notify_targets(self) -> None:
         """Update notification service targets."""
-        # Schedule the bus event before the notify-readiness guards so automations
-        # listening for alexa_media_last_called_event never miss updates that arrive
-        # in the startup/not-ready window. Only the notify target refresh below is
-        # conditional on notify readiness.
-        self._schedule_last_called_event()
         notify = self.hass.data[DATA_ALEXAMEDIA].get("notify_service")
         if not notify:
             return
