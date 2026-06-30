@@ -1650,33 +1650,41 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                     LAST_CALLED_ITEMS, len(queue_snapshot) + 2
                                 )
 
-                            try:
-                                records = await AlexaAPI.get_customer_history_records(
-                                    login_live,
-                                    start_time=start_time,
-                                    end_time=end_time,
-                                    max_record_size=max_record_size,
-                                )
-                            except TypeError as exc:
-                                # Known alexapy/aiohttp edge case: None header key, etc.
-                                account_live["last_called_probe_next_allowed"] = (
-                                    time.monotonic() + LAST_CALLED_CONN_BACKOFF_S
-                                )
-                                _LOGGER.warning(
-                                    "%s: last_called probe API TypeError (%s): %s",
-                                    hide_email(email),
-                                    trigger_cmd,
-                                    exc,
-                                    exc_info=True,
-                                )
-                                # NOTE:
-                                # We intentionally re-arm the probe (set event + backoff) on this TypeError
-                                # because this path is typically caused by transient alexapy/aiohttp issues
-                                # (e.g., None header key). Unlike Login/Connection errors, we retry quickly
-                                # to avoid losing last_called updates triggered by push events.
-                                skip_debounce = True
-                                account_live["last_called_probe_event"].set()
-                                break
+                                # Keep the history fetch inside last_called_api_lock so
+                                # the network call stays serialized with service/global
+                                # refreshes that share the lock; otherwise the per-account
+                                # rate-limit protection is defeated and 429/backoff become
+                                # more likely. The records processing below runs after the
+                                # lock is released (kept as short as the serialization needs).
+                                try:
+                                    records = (
+                                        await AlexaAPI.get_customer_history_records(
+                                            login_live,
+                                            start_time=start_time,
+                                            end_time=end_time,
+                                            max_record_size=max_record_size,
+                                        )
+                                    )
+                                except TypeError as exc:
+                                    # Known alexapy/aiohttp edge case: None header key, etc.
+                                    account_live["last_called_probe_next_allowed"] = (
+                                        time.monotonic() + LAST_CALLED_CONN_BACKOFF_S
+                                    )
+                                    _LOGGER.warning(
+                                        "%s: last_called probe API TypeError (%s): %s",
+                                        hide_email(email),
+                                        trigger_cmd,
+                                        exc,
+                                        exc_info=True,
+                                    )
+                                    # NOTE:
+                                    # We intentionally re-arm the probe (set event + backoff) on this TypeError
+                                    # because this path is typically caused by transient alexapy/aiohttp issues
+                                    # (e.g., None header key). Unlike Login/Connection errors, we retry quickly
+                                    # to avoid losing last_called updates triggered by push events.
+                                    skip_debounce = True
+                                    account_live["last_called_probe_event"].set()
+                                    break
 
                             if records is None:
                                 _LOGGER.warning(

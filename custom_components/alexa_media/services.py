@@ -182,6 +182,7 @@ class AlexaMediaServices:
 
         _LOGGER.debug("Service update_last_called called for: %s", requested_emails)
 
+        update_tasks: list[asyncio.Task] = []
         for email, account_dict in self.hass.data[DATA_ALEXAMEDIA]["accounts"].items():
             if requested_emails and email not in requested_emails:
                 continue
@@ -229,6 +230,16 @@ class AlexaMediaServices:
                 name=f"alexa_media.update_last_called.{hide_email(email)}",
             )
             account_dict["service_update_last_called_task"] = task
+            update_tasks.append(task)
+
+        # Await the scheduled refreshes so that, per the Home Assistant service
+        # contract, completion of alexa_media.update_last_called means the
+        # last_called state/notify target has actually been refreshed before a
+        # following automation step runs. return_exceptions keeps a task that a
+        # rapid re-invocation cancelled (cancel-and-replace) from breaking this
+        # call; per-task errors are already handled inside _run_update_last_called.
+        if update_tasks:
+            await asyncio.gather(*update_tasks, return_exceptions=True)
 
     async def restore_volume(self, call: ServiceCall) -> bool:
         """Handle restore volume service request.

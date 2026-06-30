@@ -9,10 +9,14 @@ it still points at the current task (``asyncio.current_task()``).
 
 These tests exercise the public ``last_call_handler`` and assert the observable
 state of ``service_update_last_called_task`` rather than the closure itself.
+
+Note: ``last_call_handler`` now awaits the scheduled refreshes before returning
+(HA service-completion contract, see ``test_update_last_called_service_await``),
+so the cancel-and-replace invariant is exercised across *concurrent* service
+calls rather than a fire-and-forget second call.
 """
 
 import asyncio
-import contextlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -45,15 +49,17 @@ class TestLastCalledTaskHandle:
 
     @pytest.mark.asyncio
     async def test_single_invocation_clears_own_handle(self):
-        """A lone task cleans up its own handle on completion."""
+        """A lone task cleans up its own handle once the handler completes.
+
+        The handler now awaits the refresh, so the task has already finished and
+        popped its own handle by the time ``last_call_handler`` returns.
+        """
 
         async def quick_update(login_obj):
             return None
 
         svc, account = _make_services(quick_update)
         await svc.last_call_handler(_make_call())
-        task = account[_KEY]
-        await task
 
         assert _KEY not in account
 
@@ -63,6 +69,9 @@ class TestLastCalledTaskHandle:
 
         This is the regression: under the old unconditional ``pop`` the first
         task's ``finally`` removed the live replacement, leaving no handle.
+        Because the handler now awaits its task, the two service calls run
+        concurrently: the first blocks awaiting task1 while the second cancels
+        task1 and stores task2 under the same key.
         """
         release = asyncio.Event()
 
@@ -71,24 +80,26 @@ class TestLastCalledTaskHandle:
 
         svc, account = _make_services(blocking_update)
 
-        # First invocation: task1 created, stored, blocks on `release`.
-        await svc.last_call_handler(_make_call())
+        # First service call: creates task1, stores it, then blocks awaiting it.
+        call1 = asyncio.ensure_future(svc.last_call_handler(_make_call()))
+        await asyncio.sleep(0)  # let handler1 create task1 and start awaiting
         task1 = account[_KEY]
-        await asyncio.sleep(0)  # let task1 start and block
+        await asyncio.sleep(0)  # let task1 start and block on `release`
 
-        # Second invocation: cancels task1, stores task2 under the same key.
-        await svc.last_call_handler(_make_call())
+        # Second service call: cancels task1, stores task2 under the same key.
+        call2 = asyncio.ensure_future(svc.last_call_handler(_make_call()))
+        await asyncio.sleep(0)
         task2 = account[_KEY]
         assert task1 is not task2
 
-        # Drive task1 to completion so its finally runs after cancellation.
-        with contextlib.suppress(asyncio.CancelledError):
-            await task1
+        # task1 was cancelled by call2; call1's gather(return_exceptions=True)
+        # swallows the CancelledError and completes after task1's finally runs.
+        await call1
 
         # The live replacement's handle must survive (not popped by task1).
         assert account.get(_KEY) is task2
 
-        # Cleanup: release task2; it owns the handle and pops it.
+        # Cleanup: release task2; it owns the handle and pops it, call2 returns.
         release.set()
-        await task2
+        await call2
         assert _KEY not in account
