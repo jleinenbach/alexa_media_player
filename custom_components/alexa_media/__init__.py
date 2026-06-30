@@ -1086,48 +1086,52 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 optional_task_results.pop()
                                 entities_to_monitor.clear()
 
-                        alexa_entities = parse_alexa_entities(
-                            api_devices,
-                            debug=hass.data[DATA_ALEXAMEDIA]["accounts"][email][
-                                "options"
-                            ].get(CONF_DEBUG, False),
-                        )
-                        hass.data[DATA_ALEXAMEDIA]["accounts"][email]["devices"].update(
-                            alexa_entities
-                        )
+                            alexa_entities = parse_alexa_entities(
+                                api_devices,
+                                debug=hass.data[DATA_ALEXAMEDIA]["accounts"][email][
+                                    "options"
+                                ].get(CONF_DEBUG, False),
+                            )
+                            hass.data[DATA_ALEXAMEDIA]["accounts"][email][
+                                "devices"
+                            ].update(alexa_entities)
 
-                        _entities_to_monitor = set()
-                        for type_of_entity, entities in alexa_entities.items():
-                            if (
-                                type_of_entity
-                                in {"guard", "temperature", "air_quality", "aiaqm"}
-                                or extended_entity_discovery
-                            ):
-                                for entity in entities:
-                                    _entities_to_monitor.add(entity.get("id"))
-                                    _LOGGER.debug("Monitoring: %s", entity.get("name"))
-                        _LOGGER.debug(
-                            "%s: Network Discovery: %s entities will be monitored",
-                            hide_email(email),
-                            len(list(_entities_to_monitor)),
-                        )
-                        # Use shorter timeout for entity data to avoid blocking
-                        _t_ed = time.monotonic()
-                        try:
-                            entity_state = await asyncio.wait_for(
-                                get_entity_data(login_obj, list(_entities_to_monitor)),
-                                timeout=10.0,
-                            )
-                        except asyncio.TimeoutError:
-                            _LOGGER.warning(
-                                "%s: get_entity_data timed out after 10s, "
-                                "entity states will be fetched on next cycle",
+                            _entities_to_monitor = set()
+                            for type_of_entity, entities in alexa_entities.items():
+                                if (
+                                    type_of_entity
+                                    in {"guard", "temperature", "air_quality", "aiaqm"}
+                                    or extended_entity_discovery
+                                ):
+                                    for entity in entities:
+                                        _entities_to_monitor.add(entity.get("id"))
+                                        _LOGGER.debug(
+                                            "Monitoring: %s", entity.get("name")
+                                        )
+                            _LOGGER.debug(
+                                "%s: Network Discovery: %s entities will be monitored",
                                 hide_email(email),
+                                len(list(_entities_to_monitor)),
                             )
-                        _LOGGER.debug(
-                            "[BOOT] get_entity_data (network) in %.2fs",
-                            time.monotonic() - _t_ed,
-                        )
+                            # Use shorter timeout for entity data to avoid blocking
+                            _t_ed = time.monotonic()
+                            try:
+                                entity_state = await asyncio.wait_for(
+                                    get_entity_data(
+                                        login_obj, list(_entities_to_monitor)
+                                    ),
+                                    timeout=10.0,
+                                )
+                            except asyncio.TimeoutError:
+                                _LOGGER.warning(
+                                    "%s: get_entity_data timed out after 10s, "
+                                    "entity states will be fetched on next cycle",
+                                    hide_email(email),
+                                )
+                            _LOGGER.debug(
+                                "[BOOT] get_entity_data (network) in %.2fs",
+                                time.monotonic() - _t_ed,
+                            )
 
                 if entities_to_monitor and optional_task_results:
                     entity_state = optional_task_results.pop()
