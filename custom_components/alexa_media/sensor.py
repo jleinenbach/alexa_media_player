@@ -703,10 +703,15 @@ class AlexaMediaNotificationSensor(SensorEntity):
                 summary,
             )
 
+        # Return the selected (key, value) tuple so the caller can keep
+        # self._active[0] in sync with the chosen next alarm. Downstream
+        # consumers (event firing, legacy labels, brief attributes) all read
+        # self._active[0]; returning the tuple lets the caller restore the
+        # historical invariant self._active[0][1] == self._next.
         return (
-            future_active[0][1]
+            future_active[0]
             if future_active
-            else (self._active[0][1] if self._active else None)
+            else (self._active[0] if self._active else None)
         )
 
     def _process_raw_notifications(self):
@@ -763,7 +768,21 @@ class AlexaMediaNotificationSensor(SensorEntity):
         )
 
         if self._type == "Alarm":
-            self._next = self._select_next_alarm(now)
+            selected = self._select_next_alarm(now)
+            if (
+                selected is not None
+                and self._active
+                and self._active[0] is not selected
+            ):
+                # Reorder _active so the selected alarm is first, restoring the
+                # invariant _active[0][1] == _next for all sensor types. Event
+                # firing, legacy label attributes, and the brief list all read
+                # _active[0], so this keeps state, automations, and attributes
+                # consistent (identity filter preserves the rest in time order).
+                self._active = [selected] + [
+                    item for item in self._active if item is not selected
+                ]
+            self._next = selected[1] if selected is not None else None
         else:
             self._next = self._active[0][1] if self._active else None
 

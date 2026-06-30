@@ -1583,7 +1583,9 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                 account_live["last_called_probe_event"].wait(),
                                 timeout=delay,
                             )
-                            account_live["last_called_probe_event"].clear()
+                            # Single-consume-point: do NOT clear the event here.
+                            # Leaving it set lets the outer loop's wait()/clear()
+                            # re-consume and reprocess the freshly queued activity.
                             preempted = True
                             break
                         except asyncio.TimeoutError:
@@ -1901,7 +1903,10 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                                         exc_info=True,
                                     )
                                 account_live["last_called_probe_trigger_ts"] = 0
-                                account_live["last_called_probe_event"].clear()
+                                # Single-consume-point: do NOT clear the event after
+                                # processing. A push that arrived mid-processing has
+                                # already re-set it; the outer loop re-consumes and
+                                # handles the newly queued activity.
 
                             break
 
@@ -1935,7 +1940,10 @@ async def setup_alexa(hass, config_entry, login_obj: AlexaLogin):
                             account_live, resolved_keys
                         )
                         account_live["last_called_probe_trigger_ts"] = 0
-                        account_live["last_called_probe_event"].clear()
+                        # Single-consume-point: do NOT clear the event after
+                        # processing. A push that arrived mid-processing has already
+                        # re-set it; the outer loop re-consumes and handles the
+                        # newly queued activity so rapid voice commands are not lost.
                         break
             except asyncio.CancelledError:
                 raise
