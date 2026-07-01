@@ -63,9 +63,9 @@ class TestReauthReload:
         flow.hass.bus.async_fire = MagicMock()
         flow.async_abort = MagicMock(return_value={"type": "abort"})
 
-        # Patch async_dismiss_persistent_notification
+        # Patch the reauth-dismiss helper the flow now routes through
         with patch(
-            "custom_components.alexa_media.config_flow.async_dismiss_persistent_notification"
+            "custom_components.alexa_media.config_flow.dismiss_reauth_notification"
         ):
             # Call _test_login which handles reauth
             await flow._test_login()
