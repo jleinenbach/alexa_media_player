@@ -31,7 +31,6 @@ from alexapy.helpers import delete_cookie as alexapy_delete_cookie
 import async_timeout
 from homeassistant.components.persistent_notification import (
     async_create as async_create_persistent_notification,
-    async_dismiss as async_dismiss_persistent_notification,
 )
 from homeassistant.config_entries import SOURCE_REAUTH
 from homeassistant.const import (
@@ -104,6 +103,7 @@ from .helpers import (
     _existing_serials,
     alarm_just_dismissed,
     calculate_uuid,
+    dismiss_reauth_notification,
     ensure_csrf_valid,
     hide_email,
     reauth_notification_id,
@@ -3137,9 +3137,7 @@ async def async_unload_entry(hass, entry) -> bool:
             hass.data[DATA_ALEXAMEDIA].pop("services")
     if hass.data[DATA_ALEXAMEDIA].get("config_flows") == {}:
         _LOGGER.debug("Removing config_flows data")
-        async_dismiss_persistent_notification(
-            hass, reauth_notification_id(email, entry.data["url"])
-        )
+        dismiss_reauth_notification(hass, email, entry.data["url"])
         hass.data[DATA_ALEXAMEDIA].pop("config_flows")
     if not hass.data[DATA_ALEXAMEDIA]:
         _LOGGER.debug("Removing alexa_media data structure")

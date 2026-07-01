@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from alexapy import AlexapyLoginCloseRequested, AlexapyLoginError, hide_email
 from alexapy.alexalogin import AlexaLogin
 from dictor import dictor
+from homeassistant.components.persistent_notification import async_dismiss
 from homeassistant.const import CONF_EMAIL, CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConditionErrorMessage
@@ -54,6 +55,38 @@ def reauth_notification_id(email: str, url: str) -> str:
     """
     host = urlparse(url).hostname or url
     return f"alexa_media_{slugify(email)}_{slugify(host)}"
+
+
+def legacy_reauth_notification_ids(email: str, url: str) -> list[str]:
+    """Return reauth notification ids created by earlier releases.
+
+    Older releases persisted the reauth notification under a separator-less id
+    derived from a naive ``url[7:]`` slice. Version 4.13.6 (commit 3b46271)
+    created it as ``f"alexa_media_{slugify(login.email)}{slugify(login.url[7:])}"``.
+    The current create/dismiss path uses :func:`reauth_notification_id` (host
+    based, with a separator), so an upgrade would leave any notification created
+    by such an older release orphaned.
+
+    Each id is reproduced byte-for-byte from the historic expression (including
+    the naive ``url[7:]`` slice), because the id passed to ``async_dismiss`` must
+    match the historically persisted string exactly. Returned as a list so that
+    further historic formats can be appended additively without touching the
+    call sites.
+    """
+    return [f"alexa_media_{slugify(email)}{slugify(url[7:])}"]
+
+
+def dismiss_reauth_notification(hass: HomeAssistant, email: str, url: str) -> None:
+    """Dismiss the reauth notification, including ids from earlier releases.
+
+    Single dismiss path for reauth notifications: it removes the current id
+    (:func:`reauth_notification_id`) and every historic id
+    (:func:`legacy_reauth_notification_ids`), so an id-format change between
+    releases can no longer leave an orphaned prompt behind.
+    """
+    async_dismiss(hass, reauth_notification_id(email, url))
+    for legacy_id in legacy_reauth_notification_ids(email, url):
+        async_dismiss(hass, legacy_id)
 
 
 def _csrf_needs_refresh(login_obj: AlexaLogin) -> bool:

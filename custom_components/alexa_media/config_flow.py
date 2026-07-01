@@ -29,9 +29,6 @@ from alexapy import (
 from awesomeversion import AwesomeVersion
 from homeassistant import config_entries
 from homeassistant.components.http.view import HomeAssistantView
-from homeassistant.components.persistent_notification import (
-    async_dismiss as async_dismiss_persistent_notification,
-)
 from homeassistant.const import (
     CONF_EMAIL,
     CONF_PASSWORD,
@@ -75,7 +72,7 @@ from .const import (
     DOMAIN,
     ISSUE_URL,
 )
-from .helpers import calculate_uuid, reauth_notification_id
+from .helpers import calculate_uuid, dismiss_reauth_notification
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -688,11 +685,7 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                     "alexa_media_relogin_success",
                     event_data={"email": hide_email(email), "url": login.url},
                 )
-                notification_id = reauth_notification_id(email, login.url)
-                async_dismiss_persistent_notification(
-                    self.hass,
-                    notification_id,
-                )
+                dismiss_reauth_notification(self.hass, email, login.url)
                 if not self.hass.data[DATA_ALEXAMEDIA]["accounts"].get(
                     self.config[CONF_EMAIL]
                 ):
@@ -751,12 +744,8 @@ class AlexaMediaFlowHandler(config_entries.ConfigFlow):
                 )
         if login.status and (login.status.get("login_failed")):
             _LOGGER.debug("Login failed: %s", login.status.get("login_failed"))
-            notification_id = reauth_notification_id(email, login.url)
             await login.close()
-            async_dismiss_persistent_notification(
-                self.hass,
-                notification_id,
-            )
+            dismiss_reauth_notification(self.hass, email, login.url)
             return self.async_abort(reason="login_failed")
         new_schema = self._update_schema_defaults()
         if login.status and login.status.get("error_message"):
