@@ -45,6 +45,7 @@ from .const import (
     ALEXA_ICON_DEFAULT,
     ALEXA_UNIT_CONVERSION,
     CONF_DEBUG,
+    EPOCH_MS_THRESHOLD,
     RECURRING_DAY,
     RECURRING_PATTERN,
     RECURRING_PATTERN_ISO_SET,
@@ -78,7 +79,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
     account_dict = hass.data[DATA_ALEXAMEDIA]["accounts"][account]
     _LOGGER.debug("%s: Loading sensors", hide_email(account))
     if "sensor" not in account_dict["entities"]:
-        (hass.data[DATA_ALEXAMEDIA]["accounts"][account]["entities"]["sensor"]) = {}
+        hass.data[DATA_ALEXAMEDIA]["accounts"][account]["entities"]["sensor"] = {}
     for key, device in account_dict["devices"]["media_player"].items():
         if key not in account_dict["entities"]["media_player"]:
             _LOGGER.debug(
@@ -88,7 +89,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
             )
             raise ConfigEntryNotReady
         if key not in (account_dict["entities"]["sensor"]):
-            (account_dict["entities"]["sensor"][key]) = {}
+            account_dict["entities"]["sensor"][key] = {}
             for n_type, class_ in SENSOR_TYPES.items():
                 notifications = account_dict.get("notifications") or {}
                 key_notifications = notifications.get(key, {})
@@ -121,7 +122,7 @@ async def async_setup_platform(hass, config, add_devices_callback, discovery_inf
                     alexa_client.state,
                 )
                 devices.append(alexa_client)
-                (account_dict["entities"]["sensor"][key][n_type]) = alexa_client
+                account_dict["entities"]["sensor"][key][n_type] = alexa_client
         else:
             for alexa_client in account_dict["entities"]["sensor"][key].values():
                 _LOGGER.debug(
@@ -603,6 +604,116 @@ class AlexaMediaNotificationSensor(SensorEntity):
         self._amz_id: Optional[str] = None
         self._version: Optional[str] = None
 
+    def _coerce_datetime(self, value) -> Optional[datetime.datetime]:
+        """Best-effort conversion of Alexa datetime-ish values to aware datetime."""
+
+        def _ensure_aware(parsed: datetime.datetime) -> datetime.datetime:
+            if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+                return parsed
+            timezone = dt.get_time_zone(
+                self._client._timezone  # pylint: disable=protected-access
+            )
+            return parsed.replace(tzinfo=timezone or LOCAL_TIMEZONE)
+
+        if isinstance(value, datetime.datetime):
+            return _ensure_aware(value)
+
+        if value in (None, ""):
+            return None
+
+        if isinstance(value, (int, float)):
+            ts = value / 1000 if value > EPOCH_MS_THRESHOLD else value
+            return datetime.datetime.fromtimestamp(ts, tz=LOCAL_TIMEZONE)
+
+        if isinstance(value, str):
+            parsed = dt.parse_datetime(value)
+            if parsed is None:
+                return None
+            return _ensure_aware(parsed)
+
+        return None
+
+    def _normalize_alarm_snooze_state(self, value):
+        """Normalize snoozed alarm state before sorting/selecting next."""
+        if self._type != "Alarm" or not value:
+            return value
+
+        next_item = value[1]
+        if not isinstance(next_item, dict):
+            return value
+
+        status = next_item.get("status")
+        snoozed_to = self._coerce_datetime(next_item.get("snoozedToTime"))
+        alarm_when = self._coerce_datetime(next_item.get(self._sensor_property))
+        now = dt.now()
+
+        if snoozed_to and snoozed_to > now:
+            next_item["status"] = "SNOOZED"
+            next_item["snoozedToTime"] = snoozed_to
+            next_item[self._sensor_property] = snoozed_to
+            return value
+
+        if status == "SNOOZED" and snoozed_to is None and alarm_when is not None:
+            next_item["snoozedToTime"] = alarm_when
+            next_item[self._sensor_property] = alarm_when
+            return value
+
+        return value
+
+    def _is_active_notification(self, item, now):
+        """Return whether a notification should be considered active."""
+        status = item[1].get("status")
+        if status == "ON":
+            return True
+
+        if status != "SNOOZED":
+            return False
+
+        snoozed_to = self._coerce_datetime(item[1].get("snoozedToTime"))
+        return snoozed_to is None or snoozed_to > now
+
+    def _select_next_alarm(self, now):
+        """Select next alarm, preferring future active alarms over skipped past ones."""
+        future_active = []
+        skipped_past = []
+
+        for item in self._active:
+            when = self._coerce_datetime(item[1].get(self._sensor_property))
+            if when is not None and when > now:
+                future_active.append(item)
+            else:
+                skipped_past.append((item, when))
+
+        if self._debug and skipped_past:
+            summary = [
+                {
+                    "id": v.get("id"),
+                    "status": v.get("status"),
+                    self._sensor_property: when,
+                    "snoozedToTime": v.get("snoozedToTime"),
+                }
+                for (_, v), when in skipped_past
+            ]
+
+            _LOGGER.debug(
+                "%s: %s %s skipped past notifications: %s",
+                hide_email(self._account),
+                hide_serial(self._client.device_serial_number),
+                self._type,
+                summary,
+            )
+
+        # Return the selected (key, value) tuple so the caller can keep
+        # self._active[0] in sync with the chosen next alarm. Downstream
+        # consumers (event firing, legacy labels, brief attributes) all read
+        # self._active[0]; returning the tuple lets the caller restore the
+        # historical invariant self._active[0][1] == self._next.
+        return (
+            future_active[0]
+            if future_active
+            else (self._active[0] if self._active else None)
+        )
+
     def _process_raw_notifications(self):
         # Build full list for this device/type
         self._all = (
@@ -610,6 +721,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
             if self._n_dict
             else []
         )
+        self._all = list(map(self._normalize_alarm_snooze_state, self._all))
         self._all = list(map(self._update_recurring_alarm, self._all))
         self._all = sorted(self._all, key=lambda x: x[1][self._sensor_property])
 
@@ -621,6 +733,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
                         "id": v.get("id"),
                         "status": v.get("status"),
                         self._sensor_property: v.get(self._sensor_property),
+                        "snoozedToTime": v.get("snoozedToTime"),
                         "lastUpdatedDate": v.get("lastUpdatedDate"),
                         "type": v.get("type"),
                     }
@@ -647,13 +760,31 @@ class AlexaMediaNotificationSensor(SensorEntity):
         # Previous "next" for change detection
         self._prior_value = self._next if self._active else None
 
-        # Filter ACTIVE (ON / SNOOZED)
-        self._active = (
-            list(filter(lambda x: x[1]["status"] in ("ON", "SNOOZED"), self._all))
-            if self._all
-            else []
+        now = dt.now()
+
+        # Filter ACTIVE (ON / SNOOZED, excluding expired snoozes)
+        self._active = list(
+            filter(lambda item: self._is_active_notification(item, now), self._all)
         )
-        self._next = self._active[0][1] if self._active else None
+
+        if self._type == "Alarm":
+            selected = self._select_next_alarm(now)
+            if (
+                selected is not None
+                and self._active
+                and self._active[0] is not selected
+            ):
+                # Reorder _active so the selected alarm is first, restoring the
+                # invariant _active[0][1] == _next for all sensor types. Event
+                # firing, legacy label attributes, and the brief list all read
+                # _active[0], so this keeps state, automations, and attributes
+                # consistent (identity filter preserves the rest in time order).
+                self._active = [selected] + [
+                    item for item in self._active if item is not selected
+                ]
+            self._next = selected[1] if selected is not None else None
+        else:
+            self._next = self._active[0][1] if self._active else None
 
         # DEBUG: log ACTIVE set and which one we picked as next
         if self._debug and self._active:
@@ -663,6 +794,7 @@ class AlexaMediaNotificationSensor(SensorEntity):
                         "id": v.get("id"),
                         "status": v.get("status"),
                         self._sensor_property: v.get(self._sensor_property),
+                        "snoozedToTime": v.get("snoozedToTime"),
                         "lastUpdatedDate": v.get("lastUpdatedDate"),
                         "type": v.get("type"),
                     }
@@ -789,7 +921,18 @@ class AlexaMediaNotificationSensor(SensorEntity):
                     datetime.datetime.fromtimestamp(alarm / 1000, tz=LOCAL_TIMEZONE)
                 )
             )
-        alarm_on = next_item["status"] == "ON"
+        alarm_status = next_item.get("status")
+        alarm_on = alarm_status == "ON"
+        alarm_snoozed = alarm_status == "SNOOZED"
+
+        # Preserve snoozed alarms exactly as normalized above.
+        if alarm_snoozed:
+            if reminder:
+                alarm = dt.as_timestamp(alarm) * 1000
+            if alarm != next_item[self._sensor_property]:
+                next_item[self._sensor_property] = alarm
+            return value
+
         r_rule_data = next_item.get("rRuleData")
         if r_rule_data:
             next_trigger_times = r_rule_data.get("nextTriggerTimes")

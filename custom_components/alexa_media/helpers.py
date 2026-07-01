@@ -13,15 +13,18 @@ import hashlib
 import logging
 import time
 from typing import Any, Callable, Optional, TypeVar, overload
+from urllib.parse import urlparse
 
 from alexapy import AlexapyLoginCloseRequested, AlexapyLoginError, hide_email
 from alexapy.alexalogin import AlexaLogin
 from dictor import dictor
+from homeassistant.components.persistent_notification import async_dismiss
 from homeassistant.const import CONF_EMAIL, CONF_URL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConditionErrorMessage
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
+from homeassistant.util import slugify
 import wrapt
 
 from .const import DATA_ALEXAMEDIA, EXCEPTION_TEMPLATE
@@ -41,6 +44,49 @@ ArgType = TypeVar("ArgType")
 # integration can preempt the internal refresh and skip the call entirely
 # when a valid token cannot be obtained.
 CSRF_MAX_AGE: int = 60 * 60 * 24  # 24 h – same as alexapy
+
+
+def reauth_notification_id(email: str, url: str) -> str:
+    """Build the persistent-notification id for a reauth prompt.
+
+    Single source of truth shared by the create and dismiss sites so the id
+    cannot drift between them (a mismatch would leave the notification orphaned
+    on unload).
+    """
+    host = urlparse(url).hostname or url
+    return f"alexa_media_{slugify(email)}_{slugify(host)}"
+
+
+def legacy_reauth_notification_ids(email: str, url: str) -> list[str]:
+    """Return reauth notification ids created by earlier releases.
+
+    Older releases persisted the reauth notification under a separator-less id
+    derived from a naive ``url[7:]`` slice. Version 4.13.6 (commit 3b46271)
+    created it as ``f"alexa_media_{slugify(login.email)}{slugify(login.url[7:])}"``.
+    The current create/dismiss path uses :func:`reauth_notification_id` (host
+    based, with a separator), so an upgrade would leave any notification created
+    by such an older release orphaned.
+
+    Each id is reproduced byte-for-byte from the historic expression (including
+    the naive ``url[7:]`` slice), because the id passed to ``async_dismiss`` must
+    match the historically persisted string exactly. Returned as a list so that
+    further historic formats can be appended additively without touching the
+    call sites.
+    """
+    return [f"alexa_media_{slugify(email)}{slugify(url[7:])}"]
+
+
+def dismiss_reauth_notification(hass: HomeAssistant, email: str, url: str) -> None:
+    """Dismiss the reauth notification, including ids from earlier releases.
+
+    Single dismiss path for reauth notifications: it removes the current id
+    (:func:`reauth_notification_id`) and every historic id
+    (:func:`legacy_reauth_notification_ids`), so an id-format change between
+    releases can no longer leave an orphaned prompt behind.
+    """
+    async_dismiss(hass, reauth_notification_id(email, url))
+    for legacy_id in legacy_reauth_notification_ids(email, url):
+        async_dismiss(hass, legacy_id)
 
 
 def _csrf_needs_refresh(login_obj: AlexaLogin) -> bool:
@@ -92,26 +138,109 @@ async def ensure_csrf_valid(login_obj: AlexaLogin, context: str = "") -> bool:
     return True
 
 
+def _norm_filter_token(value: Any) -> str | None:
+    """Normalize a single filter token for reliable matching."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    return s.casefold()
+
+
+def _coerce_filter(value: Any) -> set[str]:
+    """Coerce include/exclude filter input into a normalized set[str].
+
+    Accepts:
+    - None / empty -> empty set
+    - comma-separated str -> split on commas
+    - list/set/tuple -> per-item normalization
+    - anything else -> single token (best effort)
+    """
+    if not value:
+        return set()
+
+    # Legacy/back-compat: allow comma-separated string
+    if isinstance(value, str):
+        out = set()
+        for part in value.split(","):
+            token = _norm_filter_token(part)
+            if token:
+                out.add(token)
+        return out
+
+    if isinstance(value, (list, set, tuple)):
+        out = set()
+        for v in value:
+            token = _norm_filter_token(v)
+            if token:
+                out.add(token)
+        return out
+
+    token = _norm_filter_token(value)
+    return {token} if token else set()
+
+
 async def add_devices(
     account: str,
     devices: list[Entity],
     add_devices_callback: Callable[[list[Entity], bool], None],
-    include_filter: Optional[list[str]] = None,
-    exclude_filter: Optional[list[str]] = None,
+    include_filter: str | list[str] | set[str] | tuple[str, ...] | None = None,
+    exclude_filter: str | list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> bool:
     """Add devices using add_devices_callback."""
-    include_filter = include_filter or []
-    exclude_filter = exclude_filter or []
+    include_filter_set = _coerce_filter(include_filter)
+    exclude_filter_set = _coerce_filter(exclude_filter)
+    if include_filter_set:
+        _LOGGER.debug(
+            "%s: include_filter_set: %s",
+            account,
+            include_filter_set,
+        )
+    if exclude_filter_set:
+        _LOGGER.debug(
+            "%s: exclude_filter_set: %s",
+            account,
+            exclude_filter_set,
+        )
 
     def _device_name(dev: Entity) -> str | None:
-        """Best-effort name before entity_id is assigned."""
-        return (
+        """Best-effort name before entity_id is assigned.
+
+        For AMP switches, reconstruct the legacy "<device> <suffix> switch"
+        name only if those attributes were explicitly set.
+        """
+
+        # First prefer explicitly set name attributes (works for tests + most entities)
+        name = (
             getattr(dev, "name", None)
             or getattr(dev, "_attr_name", None)
             or getattr(dev, "_name", None)
             or getattr(dev, "_device_name", None)
             or getattr(dev, "_friendly_name", None)
         )
+        if name:
+            return name
+
+        # Only attempt switch reconstruction if attributes were explicitly defined
+        # (avoids MagicMock auto-attribute trap in tests)
+        dev_dict = getattr(dev, "__dict__", {})
+
+        client = dev_dict.get("_client")
+        suffix = dev_dict.get("_unique_id_suffix")
+
+        if client and suffix:
+            client_dict = getattr(client, "__dict__", {})
+            base = (
+                client_dict.get("name")
+                or client_dict.get("_attr_name")
+                or client_dict.get("_name")
+                or client_dict.get("_device_name")
+            )
+            if base:
+                return f"{base} {suffix} switch"
+
+        return None
 
     def _device_label(dev: Entity) -> str:
         """Return a compact, stable identifier for logging."""
@@ -131,19 +260,58 @@ async def add_devices(
         suffix = f" …(+{len(devs) - max_items} more)" if len(devs) > max_items else ""
         return ", ".join(labels) + suffix
 
-    new_devices: list[Entity] = []
-    for device in devices:
-        dev_name = _device_name(device)
+    def _filter_devices(
+        devs: list[Entity],
+        include_set: set[str],
+        exclude_set: set[str],
+    ) -> list[Entity]:
+        selected: list[Entity] = []
 
-        if (include_filter and dev_name not in include_filter) or (
-            exclude_filter and dev_name in exclude_filter
-        ):
-            _LOGGER.debug("%s: Excluding device: %s", account, _device_label(device))
-            continue
+        include_mode = bool(include_set)
+        if include_mode and exclude_set:
+            _LOGGER.debug(
+                "%s: include_devices set; ignoring exclude_devices per documented precedence",
+                account,
+            )
 
-        new_devices.append(device)
+        for dev in devs:
+            dev_name = _norm_filter_token(_device_name(dev))
 
-    devices = new_devices
+            # INCLUDE MODE: only include explicitly listed names
+            if include_mode:
+                if dev_name and dev_name in include_set:
+                    selected.append(dev)
+                else:
+                    if not dev_name:
+                        _LOGGER.debug(
+                            "%s: Not including device (no name yet): %s",
+                            account,
+                            _device_label(dev),
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "%s: Not including device: %s (match key=%r)",
+                            account,
+                            _device_label(dev),
+                            dev_name,
+                        )
+                continue
+
+            # EXCLUDE MODE: exclude listed names
+            if exclude_set and dev_name and dev_name in exclude_set:
+                _LOGGER.debug(
+                    "%s: Excluding device: %s (match key=%r)",
+                    account,
+                    _device_label(dev),
+                    dev_name,
+                )
+                continue
+
+            selected.append(dev)
+
+        return selected
+
+    devices = _filter_devices(devices, include_filter_set, exclude_filter_set)
     if not devices:
         return True
 
@@ -297,7 +465,7 @@ async def _catch_login_errors(func, instance, args, kwargs) -> Any:
             email = login.email
             if await login.test_loggedin():
                 _LOGGER.info(
-                    "%s.%s: Successfully re-login after a login error for %s",
+                    "%s.%s: Successful re-login after a login error for %s",
                     func.__module__[func.__module__.find(".") + 1 :],
                     func.__name__,
                     hide_email(email),
